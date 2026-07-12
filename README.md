@@ -17,7 +17,10 @@ from the iSync MS SQL database:
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env          # fill in SQL credentials (read-only account)
-# edit config/tables.yml      # map the five datasets to your real iSync tables/columns
+
+# Auto-suggest the dataset mapping from the live database, then review & merge
+stockwatch discover --out suggested-tables.yml
+# edit config/tables.yml      # finalize the five dataset mappings
 
 # Monthly receipts / issues / adjustments / net per item & warehouse
 stockwatch summary all --from 2026-06-01 --to 2026-07-01

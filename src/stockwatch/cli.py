@@ -155,5 +155,45 @@ def snapshot(
     _print(result.sort_values("quantity", ascending=False), f"{dataset} as of {as_of:%Y-%m-%d}", csv)
 
 
+@app.command()
+def discover(
+    out: Path = typer.Option(None, "--out", help="Write suggested mapping YAML to this path."),
+):
+    """Inspect the live database and suggest a tables.yml mapping for the five datasets."""
+    from .db import get_engine, read_sql
+    from .introspect import SCHEMA_SQL, render_yaml, suggest_datasets
+
+    schema = read_sql(get_engine(), SCHEMA_SQL)
+    console.print(
+        f"[dim]Found {schema.groupby(['table_schema', 'table_name']).ngroups} tables, "
+        f"{len(schema)} columns.[/dim]"
+    )
+    suggestions = suggest_datasets(schema)
+
+    table = Table(title="Dataset candidates")
+    table.add_column("dataset")
+    table.add_column("suggested table")
+    table.add_column("score")
+    table.add_column("unmapped columns")
+    for dataset, best in suggestions.items():
+        if not best:
+            table.add_row(dataset, "[red]none found[/red]", "-", "-")
+            continue
+        gaps = [c for c, phys in best["columns"].items() if phys is None]
+        table.add_row(dataset, best["table"], str(best["score"]), ", ".join(gaps) or "-")
+    console.print(table)
+
+    yaml_text = render_yaml(suggestions)
+    if out:
+        out.write_text(yaml_text)
+        console.print(f"Wrote suggested datasets block to {out} — review, then merge into config/tables.yml.")
+    else:
+        console.print(yaml_text)
+    console.print(
+        "[dim]Next: verify each mapping, then check movement-type codes with e.g.\n"
+        "SELECT DISTINCT <movement_type_col>, COUNT(*) FROM <movement_table> GROUP BY <movement_type_col>[/dim]"
+    )
+
+
 if __name__ == "__main__":
     app()

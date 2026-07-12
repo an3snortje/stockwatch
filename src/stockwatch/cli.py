@@ -156,6 +156,33 @@ def snapshot(
 
 
 @app.command()
+def columns(
+    names: list[str] = typer.Argument(..., help="Table/view names (without schema) to describe."),
+):
+    """List the columns and data types of specific tables or views."""
+    from .db import get_engine, read_sql
+
+    placeholders = ", ".join(f":t{i}" for i in range(len(names)))
+    sql = (
+        "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE "
+        "FROM INFORMATION_SCHEMA.COLUMNS "
+        f"WHERE TABLE_NAME IN ({placeholders}) "
+        "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
+    )
+    df = read_sql(get_engine(), sql, {f"t{i}": n for i, n in enumerate(names)})
+    if df.empty:
+        console.print("[red]No matching tables or views found.[/red]")
+        raise typer.Exit(1)
+    for (sch, tbl), grp in df.groupby(["TABLE_SCHEMA", "TABLE_NAME"], sort=False):
+        table = Table(title=f"{sch}.{tbl}")
+        table.add_column("column")
+        table.add_column("type")
+        for _, row in grp.iterrows():
+            table.add_row(row["COLUMN_NAME"], row["DATA_TYPE"])
+        console.print(table)
+
+
+@app.command()
 def discover(
     out: Path = typer.Option(None, "--out", help="Write suggested mapping YAML to this path."),
 ):

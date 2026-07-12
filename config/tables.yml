@@ -11,7 +11,7 @@
 datasets:
   fg_movements:
     kind: movement
-    table: dbo.FinishedProductMovements
+    table: Reporting.vProductStockMovements
     columns:
       item_code: ItemCode
       item_description: ItemDescription
@@ -23,7 +23,7 @@ datasets:
 
   rm_movements:
     kind: movement
-    table: dbo.RawMaterialMovements
+    table: Reporting.vStockMovements
     columns:
       item_code: ItemCode
       item_description: ItemDescription
@@ -35,7 +35,7 @@ datasets:
 
   wip_balance:
     kind: balance
-    table: dbo.WIPBalances
+    table: Reporting.vWorkInProgress
     columns:
       item_code: ItemCode
       item_description: ItemDescription
@@ -45,7 +45,7 @@ datasets:
 
   fg_balance:
     kind: balance
-    table: dbo.FinishedGoodsBalances
+    table: Reporting.vProductStockItems
     columns:
       item_code: ItemCode
       item_description: ItemDescription
@@ -55,7 +55,7 @@ datasets:
 
   rm_balance:
     kind: balance
-    table: dbo.RawMaterialBalances
+    table: Reporting.vFabricListing
     columns:
       item_code: ItemCode
       item_description: ItemDescription

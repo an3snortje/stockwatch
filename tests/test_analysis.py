@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from isync_inventory.analysis import detect_anomalies, movement_summary, reconcile
-from isync_inventory.config import Config, DatasetConfig
+from stockwatch.analysis import detect_anomalies, movement_summary, reconcile
+from stockwatch.config import Config, DatasetConfig
 
 
 @pytest.fixture

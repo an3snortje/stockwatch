@@ -1,4 +1,4 @@
-# iSync Inventory Analyzer
+# StockWatch
 
 Analyzes and **explains in plain English** inventory movements and balances read directly
 from the iSync MS SQL database:
@@ -20,16 +20,16 @@ cp .env.example .env          # fill in SQL credentials (read-only account)
 # edit config/tables.yml      # map the five datasets to your real iSync tables/columns
 
 # Monthly receipts / issues / adjustments / net per item & warehouse
-isync-inv summary all --from 2026-06-01 --to 2026-07-01
+stockwatch summary all --from 2026-06-01 --to 2026-07-01
 
 # Does opening balance + movements explain the closing balance?
-isync-inv reconcile fg --from 2026-06-01 --to 2026-07-01 --csv output/rec.csv
+stockwatch reconcile fg --from 2026-06-01 --to 2026-07-01 --csv output/rec.csv
 
 # Negative balances, outlier movements, dormant stock — with explanations
-isync-inv anomalies all --from 2026-04-01 --to 2026-07-01
+stockwatch anomalies all --from 2026-04-01 --to 2026-07-01
 
 # Balance snapshot (works for WIP too)
-isync-inv snapshot wip_balance --as-of 2026-06-30
+stockwatch snapshot wip_balance --as-of 2026-06-30
 ```
 
 All commands accept `--item`, `--warehouse`, `--csv` and `--config`.
@@ -65,13 +65,13 @@ the app never writes to iSync.
 
 ```
 config/tables.yml     dataset → physical table/column mapping (validated)
-src/isync_inventory/
+src/stockwatch/
   config.py           YAML loader + SQL-identifier validation
   db.py               SQLAlchemy/pyodbc engine from .env (read-only intent)
   queries.py          parameterized SELECT builder + dtype normalization
   analysis.py         pure-pandas: summary, reconciliation, anomaly detection
   explain.py          findings → plain-English narrative
-  cli.py              typer CLI (isync-inv)
+  cli.py              typer CLI (stockwatch)
 tests/                unit tests — no database required
 ```
 

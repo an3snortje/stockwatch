@@ -1,4 +1,4 @@
-"""Command-line interface: isync-inv <command>."""
+"""Command-line interface: stockwatch <command>."""
 
 from __future__ import annotations
 

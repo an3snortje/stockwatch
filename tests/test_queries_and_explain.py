@@ -2,9 +2,9 @@ import pandas as pd
 import pytest
 from datetime import date
 
-from isync_inventory.config import Config, DatasetConfig, load_config
-from isync_inventory.explain import explain_anomalies, explain_reconciliation, explain_summary
-from isync_inventory.queries import build_select
+from stockwatch.config import Config, DatasetConfig, load_config
+from stockwatch.explain import explain_anomalies, explain_reconciliation, explain_summary
+from stockwatch.queries import build_select
 
 
 @pytest.fixture

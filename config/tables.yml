@@ -1,0 +1,95 @@
+# Maps logical datasets to physical iSync tables/columns.
+# Edit the `table` and `columns` values to match your iSync database —
+# the analyzer only ever refers to the canonical (left-hand) names.
+#
+# Canonical movement columns:
+#   item_code, item_description, warehouse, movement_date,
+#   movement_type, quantity, reference
+# Canonical balance columns:
+#   item_code, item_description, warehouse, balance_date, quantity
+
+datasets:
+  fg_movements:
+    kind: movement
+    table: dbo.FinishedProductMovements
+    columns:
+      item_code: ItemCode
+      item_description: ItemDescription
+      warehouse: Warehouse
+      movement_date: MovementDate
+      movement_type: MovementType
+      quantity: Quantity
+      reference: DocumentRef
+
+  rm_movements:
+    kind: movement
+    table: dbo.RawMaterialMovements
+    columns:
+      item_code: ItemCode
+      item_description: ItemDescription
+      warehouse: Warehouse
+      movement_date: MovementDate
+      movement_type: MovementType
+      quantity: Quantity
+      reference: DocumentRef
+
+  wip_balance:
+    kind: balance
+    table: dbo.WIPBalances
+    columns:
+      item_code: ItemCode
+      item_description: ItemDescription
+      warehouse: Warehouse
+      balance_date: BalanceDate
+      quantity: Quantity
+
+  fg_balance:
+    kind: balance
+    table: dbo.FinishedGoodsBalances
+    columns:
+      item_code: ItemCode
+      item_description: ItemDescription
+      warehouse: Warehouse
+      balance_date: BalanceDate
+      quantity: Quantity
+
+  rm_balance:
+    kind: balance
+    table: dbo.RawMaterialBalances
+    columns:
+      item_code: ItemCode
+      item_description: ItemDescription
+      warehouse: Warehouse
+      balance_date: BalanceDate
+      quantity: Quantity
+
+# How movement_type values classify into directions. Anything not listed
+# is bucketed as "other" and still included in net movement by sign.
+movement_types:
+  receipts:
+    - GRN
+    - PRODUCTION_IN
+    - TRANSFER_IN
+    - RETURN_IN
+  issues:
+    - ISSUE
+    - SALES_DISPATCH
+    - PRODUCTION_OUT
+    - TRANSFER_OUT
+  adjustments:
+    - STOCK_ADJ
+    - STOCKTAKE
+    - WRITE_OFF
+
+# If issue quantities are stored as positive numbers (common in ERPs),
+# set this true so issues are negated when computing net movement.
+issues_stored_positive: true
+
+analysis:
+  # Flag items with no movement for this many days as dormant.
+  dormant_days: 90
+  # Movements beyond this many std deviations from the item's mean
+  # absolute movement are flagged as outliers.
+  outlier_zscore: 3.0
+  # Reconciliation variance below this absolute qty is ignored (rounding).
+  variance_tolerance: 0.5

@@ -82,6 +82,7 @@ def _load_snapshot_csv(path: Path) -> pd.DataFrame:
 
 def _print(df: pd.DataFrame, title: str, csv: Path | None) -> None:
     if csv:
+        csv.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(csv, index=False)
         console.print(f"[dim]Wrote {len(df)} rows to {csv}[/dim]")
     table = Table(title=title)

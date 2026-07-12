@@ -224,5 +224,5 @@ datasets:
       quantity: {product: [OnlyOne]}
 """
     )
-    with pytest.raises(ValueError, match="at least two columns"):
+    with pytest.raises(ValueError, match="at least two factors"):
         load_config(bad)

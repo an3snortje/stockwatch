@@ -72,6 +72,7 @@ def baseline_from_sheet(
     )
     for col in ("item_code", "warehouse"):
         df[col] = df[col].map(_cell_str)
+    df["item_code"] = df["item_code"].str.replace(r"\s*\|\s*", "|", regex=True)
     df["item_description"] = df["item_description"].map(_cell_str)
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
     # Exports often carry blank filler rows; a blank composite key is all '|'s.

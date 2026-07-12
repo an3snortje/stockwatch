@@ -78,6 +78,9 @@ def normalize(df: pd.DataFrame, ds: DatasetConfig) -> pd.DataFrame:
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
     for col in ("item_code", "warehouse"):
         df[col] = df[col].fillna("-").astype(str).str.strip()
+    # Strip whitespace around composite-key separators too — source columns
+    # can carry trailing spaces ("M/OLIVE |30" vs "M/OLIVE|30").
+    df["item_code"] = df["item_code"].str.replace(r"\s*\|\s*", "|", regex=True)
     for col in ("item_description", "reference"):
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.strip()

@@ -267,6 +267,27 @@ def types(
         _print(agg, f"{name} movement types", None)
 
 
+@app.command()
+def movements(
+    scope: str = typer.Argument("all", help="fg | rm | all"),
+    date_from: datetime = FROM_OPT,
+    date_to: datetime = typer.Option(None, "--to", "-t", help="End (exclusive); defaults to now."),
+    item: str = ITEM_OPT,
+    warehouse: str = WH_OPT,
+    csv: Path = CSV_OPT,
+    config: Path = CONFIG_OPT,
+):
+    """Raw movement rows for drill-down — every transaction with type, qty, reference."""
+    cfg = load_config(config)
+    end = date_to or datetime.now()
+    mov = _movements(cfg, scope, date_from, end, item, warehouse)
+    mov = mov.sort_values("movement_date")[
+        ["movement_date", "dataset", "item_code", "warehouse", "movement_type", "quantity", "reference", "item_description"]
+    ]
+    _print(mov, f"Movements {date_from:%Y-%m-%d %H:%M} → {end:%Y-%m-%d %H:%M}", csv)
+    console.print(f"[dim]net: {mov['quantity'].sum():+,.1f} units across {len(mov)} transactions[/dim]")
+
+
 @app.command(name="import-baseline")
 def import_baseline(
     xlsx: Path = typer.Argument(..., help="iSync SOH export workbook (one sheet per stock type)."),

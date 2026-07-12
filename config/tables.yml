@@ -69,28 +69,49 @@ datasets:
 
 # How movement_type values classify into directions. Anything not listed
 # is bucketed as "other" and still included in net movement by sign.
-# PLACEHOLDERS — run `stockwatch types all` and replace with the real codes.
+# Codes confirmed from `stockwatch types all` (FG = vProductStockMovements,
+# RM = vStockMovements). Cancellations classify as issues: they are signed
+# reversals that offset the original despatch.
 movement_types:
   receipts:
-    - GRN
-    - PRODUCTION_IN
-    - TRANSFER_IN
-    - RETURN_IN
+    # FG
+    - RECEIVED
+    - TRANSFERRED IN
+    - WAREHOUSE TRANSFER IN
+    - RETURNED
+    # RM
+    - RECEIPT
+    - RETURN
   issues:
-    - ISSUE
-    - SALES_DISPATCH
-    - PRODUCTION_OUT
-    - TRANSFER_OUT
+    # FG
+    - INVOICED
+    - TRANSFERRED OUT
+    - WAREHOUSE TRANSFER OUT
+    - PICKED
+    - DESPATCH CANCELLED
+    - DESPATCH CANCELLED - REJECTED
+    # RM
+    - DESPATCH
+    - SALE STOCK
+    - RTV
+    - CANCELLED DESPATCH
   adjustments:
-    - STOCK_ADJ
-    - STOCKTAKE
-    - WRITE_OFF
+    # FG
+    - STOCK ADJ IN - STOCK ADJUST- IN
+    - STOCK ADJ OUT - STOCK ADJUST - OUT
+    - STOCK ADJ IN - STOCK TAKE IN
+    - STOCK ADJ OUT - STOCK TAKE OUT
+    - STOCK ADJ OUT - INSPECTION (PROCESSING) - OUT
+    - STOCK ADJ OUT - REJECT ADJUST - OUT
+    - STOCK ADJ OUT - THEFT
+    # RM
+    - STOCK ADJ IN
+    - STOCK ADJ OUT
+  # ASN (0 units, informational) is deliberately unclassified -> "other"
 
-# If issue quantities are stored as positive numbers (common in ERPs),
-# set this true so issues are negated when computing net movement.
-# Verify with `stockwatch types all`: if issue rows show negative
-# total_units, set this false.
-issues_stored_positive: true
+# iSync stores movement quantities SIGNED (issues negative), confirmed by
+# `stockwatch types all` — so no sign-flipping is applied.
+issues_stored_positive: false
 
 analysis:
   # Flag items with no movement for this many days as dormant.

@@ -45,7 +45,11 @@ datasets:
       item_description: JobDescription
       warehouse: Customer              # grouping dimension; no warehouse in WIP
       balance_date: null               # current-state view
-      quantity: WIPCompleted           # CONFIRM: or derive PPOQty - FGRec
+      # WIP balance = job value x completion ratio. NOTE: "quantity" for WIP
+      # is therefore a monetary value (Rand), not units. If results are 100x
+      # too large, Ratio is stored as 0-100 rather than a fraction — say so
+      # and the mapping gains a divisor.
+      quantity: {product: [Value, Ratio]}
 
   fg_balance:
     kind: balance

@@ -187,3 +187,42 @@ datasets:
     )
     with pytest.raises(ValueError, match="cannot be null"):
         load_config(bad)
+
+
+def test_build_select_product_mapping():
+    from stockwatch.config import DatasetConfig
+
+    ds = DatasetConfig(
+        name="wip_balance",
+        kind="balance",
+        table="Reporting.vWorkInProgress",
+        columns={
+            "item_code": "DONumber",
+            "item_description": "JobDescription",
+            "warehouse": "Customer",
+            "balance_date": None,
+            "quantity": {"product": ["Value", "Ratio"]},
+        },
+    )
+    sql, _ = build_select(ds)
+    assert "([Value] * [Ratio]) AS [quantity]" in sql
+
+
+def test_config_rejects_bad_product_mapping(tmp_path):
+    bad = tmp_path / "tables.yml"
+    bad.write_text(
+        """
+datasets:
+  wip_balance:
+    kind: balance
+    table: dbo.WIP
+    columns:
+      item_code: Job
+      item_description: D
+      warehouse: W
+      balance_date: null
+      quantity: {product: [OnlyOne]}
+"""
+    )
+    with pytest.raises(ValueError, match="at least two columns"):
+        load_config(bad)

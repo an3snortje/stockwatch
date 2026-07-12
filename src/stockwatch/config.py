@@ -25,8 +25,10 @@ NULLABLE_COLUMNS = {"item_description", "warehouse", "balance_date", "reference"
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_ .#$-]+$")
 
 # A column mapping value: physical column name, list of columns forming a
-# composite key (concatenated with '|'), or None when the view lacks it.
-ColumnMap = str | list[str] | None
+# composite key (concatenated with '|'), {product: [cols]} for a derived
+# multiplication (e.g. WIP value x completion ratio), or None when the view
+# lacks it.
+ColumnMap = str | list[str] | dict | None
 
 
 @dataclass
@@ -87,6 +89,14 @@ def load_config(path: str | Path) -> Config:
                 if not src:
                     raise ValueError(f"Dataset {name}: column {canon!r} maps to an empty list")
                 for part in src:
+                    _validate_identifier(part, f"dataset {name} columns")
+            elif isinstance(src, dict):
+                if set(src) != {"product"} or not isinstance(src["product"], list) or len(src["product"]) < 2:
+                    raise ValueError(
+                        f"Dataset {name}: column {canon!r} derived mapping must be "
+                        f"{{product: [col, col, ...]}} with at least two columns"
+                    )
+                for part in src["product"]:
                     _validate_identifier(part, f"dataset {name} columns")
             else:
                 _validate_identifier(src, f"dataset {name} columns")

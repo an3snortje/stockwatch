@@ -18,12 +18,14 @@ def _bracket(identifier: str) -> str:
 
 
 def _expr(mapping: ColumnMap) -> str:
-    """SQL expression for a column mapping (column, composite key, or NULL)."""
+    """SQL expression for a column mapping (column, composite key, product, or NULL)."""
     if mapping is None:
         return "NULL"
     if isinstance(mapping, list):
         parts = ", ".join(_bracket(c) for c in mapping)
         return f"CONCAT_WS('|', {parts})"
+    if isinstance(mapping, dict):
+        return "(" + " * ".join(_bracket(c) for c in mapping["product"]) + ")"
     return _bracket(mapping)
 
 

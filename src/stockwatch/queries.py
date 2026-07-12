@@ -25,7 +25,11 @@ def _expr(mapping: ColumnMap) -> str:
         parts = ", ".join(_bracket(c) for c in mapping)
         return f"CONCAT_WS('|', {parts})"
     if isinstance(mapping, dict):
-        return "(" + " * ".join(_bracket(c) for c in mapping["product"]) + ")"
+        factors = (
+            _bracket(c) if isinstance(c, str) else repr(float(c))
+            for c in mapping["product"]
+        )
+        return "(" + " * ".join(factors) + ")"
     return _bracket(mapping)
 
 

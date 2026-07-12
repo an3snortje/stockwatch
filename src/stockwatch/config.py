@@ -91,13 +91,22 @@ def load_config(path: str | Path) -> Config:
                 for part in src:
                     _validate_identifier(part, f"dataset {name} columns")
             elif isinstance(src, dict):
-                if set(src) != {"product"} or not isinstance(src["product"], list) or len(src["product"]) < 2:
+                factors = src.get("product")
+                if set(src) != {"product"} or not isinstance(factors, list) or len(factors) < 2:
                     raise ValueError(
                         f"Dataset {name}: column {canon!r} derived mapping must be "
-                        f"{{product: [col, col, ...]}} with at least two columns"
+                        f"{{product: [col|number, ...]}} with at least two factors"
                     )
-                for part in src["product"]:
-                    _validate_identifier(part, f"dataset {name} columns")
+                if not any(isinstance(p, str) for p in factors):
+                    raise ValueError(f"Dataset {name}: column {canon!r} product needs at least one column")
+                for part in factors:
+                    if isinstance(part, str):
+                        _validate_identifier(part, f"dataset {name} columns")
+                    elif not isinstance(part, (int, float)):
+                        raise ValueError(
+                            f"Dataset {name}: column {canon!r} product factors must be "
+                            f"column names or numbers, got {part!r}"
+                        )
             else:
                 _validate_identifier(src, f"dataset {name} columns")
         datasets[name] = DatasetConfig(name=name, kind=kind, table=spec["table"], columns=columns)

@@ -201,11 +201,11 @@ def test_build_select_product_mapping():
             "item_description": "JobDescription",
             "warehouse": "Customer",
             "balance_date": None,
-            "quantity": {"product": ["Value", "Ratio"]},
+            "quantity": {"product": ["Value", "Ratio", 0.01]},
         },
     )
     sql, _ = build_select(ds)
-    assert "([Value] * [Ratio]) AS [quantity]" in sql
+    assert "([Value] * [Ratio] * 0.01) AS [quantity]" in sql
 
 
 def test_config_rejects_bad_product_mapping(tmp_path):

@@ -45,11 +45,10 @@ datasets:
       item_description: JobDescription
       warehouse: Customer              # grouping dimension; no warehouse in WIP
       balance_date: null               # current-state view
-      # WIP balance = job value x completion ratio. NOTE: "quantity" for WIP
-      # is therefore a monetary value (Rand), not units. If results are 100x
-      # too large, Ratio is stored as 0-100 rather than a fraction — say so
-      # and the mapping gains a divisor.
-      quantity: {product: [Value, Ratio]}
+      # WIP balance = job value x completion ratio. Ratio is stored 0-100,
+      # hence the 0.01 factor. NOTE: "quantity" for WIP is therefore a
+      # monetary value (Rand), not units.
+      quantity: {product: [Value, Ratio, 0.01]}
 
   fg_balance:
     kind: balance

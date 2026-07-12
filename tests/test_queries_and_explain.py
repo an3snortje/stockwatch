@@ -111,3 +111,79 @@ def test_explanations_produce_readable_lines():
     )
     lines = explain_anomalies(anomalies)
     assert any("NEGATIVE balance" in line for line in lines)
+
+
+def test_build_select_composite_and_null_mappings():
+    from stockwatch.config import DatasetConfig
+
+    ds = DatasetConfig(
+        name="fg_balance",
+        kind="balance",
+        table="Reporting.vProductStockItems",
+        columns={
+            "item_code": ["Style #", "Size"],
+            "item_description": "Product Desc",
+            "warehouse": "Warehouse",
+            "balance_date": None,
+            "quantity": "Units",
+        },
+    )
+    sql, params = build_select(ds, date_from=date(2026, 6, 1), item_code="STY1|XL")
+    assert "CONCAT_WS('|', [Style #], [Size]) AS [item_code]" in sql
+    assert "NULL AS [balance_date]" in sql
+    assert "date_from" not in params  # no date column -> date filters skipped
+    assert "CONCAT_WS('|', [Style #], [Size]) = :item_code" in sql
+    assert params == {"item_code": "STY1|XL"}
+    assert not ds.has_date
+
+
+def test_normalize_stamps_current_state_balance():
+    import pandas as pd
+    from stockwatch.config import DatasetConfig
+    from stockwatch.queries import normalize
+
+    ds = DatasetConfig(
+        name="rm_balance",
+        kind="balance",
+        table="Reporting.vFabricListing",
+        columns={
+            "item_code": "Stock No",
+            "item_description": "Stock Desc",
+            "warehouse": None,
+            "balance_date": None,
+            "quantity": "SOH Units",
+        },
+    )
+    raw = pd.DataFrame(
+        {
+            "item_code": ["RM1"],
+            "item_description": [None],
+            "warehouse": [None],
+            "balance_date": [None],
+            "quantity": ["12.5"],
+        }
+    )
+    out = normalize(raw, ds)
+    assert out["balance_date"].notna().all()
+    assert out["warehouse"].iloc[0] == "-"
+    assert out["quantity"].iloc[0] == 12.5
+
+
+def test_config_rejects_null_for_required_column(tmp_path):
+    bad = tmp_path / "tables.yml"
+    bad.write_text(
+        """
+datasets:
+  rm_balance:
+    kind: balance
+    table: dbo.Balances
+    columns:
+      item_code: null
+      item_description: D
+      warehouse: W
+      balance_date: BD
+      quantity: Q
+"""
+    )
+    with pytest.raises(ValueError, match="cannot be null"):
+        load_config(bad)

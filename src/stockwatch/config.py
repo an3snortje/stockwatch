@@ -19,7 +19,14 @@ MOVEMENT_COLUMNS = {
 }
 BALANCE_COLUMNS = {"item_code", "item_description", "warehouse", "balance_date", "quantity"}
 
+# Canonical columns that may map to null (source view has no such column).
+NULLABLE_COLUMNS = {"item_description", "warehouse", "balance_date", "reference"}
+
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_ .#$-]+$")
+
+# A column mapping value: physical column name, list of columns forming a
+# composite key (concatenated with '|'), or None when the view lacks it.
+ColumnMap = str | list[str] | None
 
 
 @dataclass
@@ -27,11 +34,16 @@ class DatasetConfig:
     name: str
     kind: str  # "movement" | "balance"
     table: str
-    columns: dict[str, str]
+    columns: dict[str, ColumnMap]
 
     @property
     def date_column(self) -> str:
         return "movement_date" if self.kind == "movement" else "balance_date"
+
+    @property
+    def has_date(self) -> bool:
+        """False for current-state views with no snapshot/movement date column."""
+        return self.columns.get(self.date_column) is not None
 
 
 @dataclass
@@ -67,8 +79,17 @@ def load_config(path: str | Path) -> Config:
             raise ValueError(f"Dataset {name}: missing column mappings {sorted(missing)}")
         for part in spec["table"].split("."):
             _validate_identifier(part, f"dataset {name} table")
-        for src in columns.values():
-            _validate_identifier(src, f"dataset {name} columns")
+        for canon, src in columns.items():
+            if src is None:
+                if canon not in NULLABLE_COLUMNS:
+                    raise ValueError(f"Dataset {name}: column {canon!r} cannot be null")
+            elif isinstance(src, list):
+                if not src:
+                    raise ValueError(f"Dataset {name}: column {canon!r} maps to an empty list")
+                for part in src:
+                    _validate_identifier(part, f"dataset {name} columns")
+            else:
+                _validate_identifier(src, f"dataset {name} columns")
         datasets[name] = DatasetConfig(name=name, kind=kind, table=spec["table"], columns=columns)
 
     analysis = raw.get("analysis", {})

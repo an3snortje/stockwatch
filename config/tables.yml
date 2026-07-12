@@ -1,6 +1,10 @@
-# Maps logical datasets to physical iSync tables/columns.
-# Edit the `table` and `columns` values to match your iSync database —
-# the analyzer only ever refers to the canonical (left-hand) names.
+# Maps logical datasets to physical iSync objects (Reporting.* views).
+#
+# Mapping values may be:
+#   - a single column name
+#   - a list of columns (composite key, joined with '|', e.g. style|size)
+#   - null when the view has no such column (allowed for item_description,
+#     warehouse, balance_date, reference)
 #
 # Canonical movement columns:
 #   item_code, item_description, warehouse, movement_date,
@@ -13,58 +17,59 @@ datasets:
     kind: movement
     table: Reporting.vProductStockMovements
     columns:
-      item_code: ItemCode
-      item_description: ItemDescription
+      item_code: [fStyle, Size]        # FG keyed by style + size
+      item_description: ProdDesc
       warehouse: Warehouse
       movement_date: MovementDate
       movement_type: MovementType
-      quantity: Quantity
-      reference: DocumentRef
+      quantity: fUnits
+      reference: Reference
 
   rm_movements:
     kind: movement
     table: Reporting.vStockMovements
     columns:
-      item_code: ItemCode
-      item_description: ItemDescription
-      warehouse: Warehouse
+      item_code: fStockNo
+      item_description: ItemDesc
+      warehouse: Location              # view has no Warehouse column
       movement_date: MovementDate
       movement_type: MovementType
-      quantity: Quantity
-      reference: DocumentRef
+      quantity: fUnits
+      reference: fHeaderNo
 
   wip_balance:
     kind: balance
     table: Reporting.vWorkInProgress
     columns:
-      item_code: ItemCode
-      item_description: ItemDescription
-      warehouse: Warehouse
-      balance_date: BalanceDate
-      quantity: Quantity
+      item_code: DONumber              # WIP is per job, not per item
+      item_description: JobDescription
+      warehouse: Customer              # grouping dimension; no warehouse in WIP
+      balance_date: null               # current-state view
+      quantity: WIPCompleted           # CONFIRM: or derive PPOQty - FGRec
 
   fg_balance:
     kind: balance
     table: Reporting.vProductStockItems
     columns:
-      item_code: ItemCode
-      item_description: ItemDescription
+      item_code: ["Style #", Size]     # matches fg_movements key
+      item_description: Product Desc
       warehouse: Warehouse
-      balance_date: BalanceDate
-      quantity: Quantity
+      balance_date: null               # current-state view
+      quantity: Units
 
   rm_balance:
     kind: balance
     table: Reporting.vFabricListing
     columns:
-      item_code: ItemCode
-      item_description: ItemDescription
-      warehouse: Warehouse
-      balance_date: BalanceDate
-      quantity: Quantity
+      item_code: Stock No
+      item_description: Stock Desc
+      warehouse: Location              # matches rm_movements
+      balance_date: null               # current-state view
+      quantity: SOH Units
 
 # How movement_type values classify into directions. Anything not listed
 # is bucketed as "other" and still included in net movement by sign.
+# PLACEHOLDERS — run `stockwatch types all` and replace with the real codes.
 movement_types:
   receipts:
     - GRN
@@ -83,13 +88,14 @@ movement_types:
 
 # If issue quantities are stored as positive numbers (common in ERPs),
 # set this true so issues are negated when computing net movement.
+# Verify with `stockwatch types all`: if issue rows show negative
+# total_units, set this false.
 issues_stored_positive: true
 
 analysis:
   # Flag items with no movement for this many days as dormant.
   dormant_days: 90
-  # Movements beyond this many std deviations from the item's mean
-  # absolute movement are flagged as outliers.
+  # Movements beyond this robust z-score vs the item's history are outliers.
   outlier_zscore: 3.0
   # Reconciliation variance below this absolute qty is ignored (rounding).
   variance_tolerance: 0.5

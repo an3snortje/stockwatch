@@ -25,8 +25,13 @@ stockwatch discover --out suggested-tables.yml
 # Monthly receipts / issues / adjustments / net per item & warehouse
 stockwatch summary all --from 2026-06-01 --to 2026-07-01
 
-# Does opening balance + movements explain the closing balance?
-stockwatch reconcile fg --from 2026-06-01 --to 2026-07-01 --csv output/rec.csv
+# Discover the real movement-type codes, then classify them in tables.yml
+stockwatch types all
+
+# iSync balance views are current-state: capture a baseline now...
+stockwatch snapshot fg_balance --csv baselines/fg_2026-07-01.csv
+# ...then later, check opening baseline + movements = closing balance
+stockwatch reconcile fg --from 2026-07-01 --to 2026-07-12 --opening-csv baselines/fg_2026-07-01.csv
 
 # Negative balances, outlier movements, dormant stock — with explanations
 stockwatch anomalies all --from 2026-04-01 --to 2026-07-01
@@ -58,7 +63,10 @@ the app never writes to iSync.
   plus a narrative of the biggest builders and drawdowns.
 - **reconcile** — `opening + net movement = closing?` per item/warehouse.
   Variances beyond tolerance are explained (unposted transactions, stocktake
-  adjustments outside the movement tables, cut-off timing).
+  adjustments outside the movement tables, cut-off timing). iSync's balance
+  views are current-state only, so openings come from saved baselines:
+  schedule `stockwatch snapshot <ds> --csv baselines/...` (e.g. nightly via
+  n8n) and pass one back with `--opening-csv`.
 - **anomalies** — negative balances (issued stock never received), movement
   outliers (>3σ vs the item's history — often UoM or keying errors), and
   dormant items (no movement in 90 days).

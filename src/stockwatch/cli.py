@@ -45,12 +45,39 @@ def _movements(cfg: Config, scope: str, date_from: date, date_to: date, item: st
     return pd.concat(frames, ignore_index=True)
 
 
-def _snapshot_at(balances: pd.DataFrame, ts: pd.Timestamp) -> pd.DataFrame:
-    """Latest balance row per item/warehouse on or before ts."""
-    eligible = balances[balances["balance_date"] <= ts]
-    return (
-        eligible.sort_values("balance_date").groupby(analysis.KEY, as_index=False).tail(1)
+def _snapshot_at(balances: pd.DataFrame, ts: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Aggregate balance per item/warehouse (rows may be per roll/lot/size).
+
+    With ts, restrict to the latest snapshot date per key on or before ts;
+    without, aggregate everything (current-state views).
+    """
+    df = balances
+    if ts is not None:
+        df = df[df["balance_date"] <= ts]
+        latest = df.groupby(analysis.KEY)["balance_date"].transform("max")
+        df = df[df["balance_date"] == latest]
+    if df.empty:
+        return df
+    return df.groupby(analysis.KEY, as_index=False).agg(
+        item_description=("item_description", "first"),
+        balance_date=("balance_date", "max"),
+        quantity=("quantity", "sum"),
     )
+
+
+def _load_snapshot_csv(path: Path) -> pd.DataFrame:
+    """Read a baseline saved earlier by `stockwatch snapshot --csv`."""
+    df = pd.read_csv(path)
+    missing = {"item_code", "warehouse", "quantity"} - set(df.columns)
+    if missing:
+        raise typer.BadParameter(f"{path} is missing columns {sorted(missing)}")
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
+    for col in ("item_code", "warehouse"):
+        df[col] = df[col].astype(str).str.strip()
+    if "item_description" not in df.columns:
+        df["item_description"] = ""
+    df["balance_date"] = pd.to_datetime(df.get("balance_date"), errors="coerce")
+    return df
 
 
 def _print(df: pd.DataFrame, title: str, csv: Path | None) -> None:
@@ -98,6 +125,12 @@ def reconcile(
     date_to: datetime = TO_OPT,
     item: str = ITEM_OPT,
     warehouse: str = WH_OPT,
+    opening_csv: Path = typer.Option(
+        None,
+        "--opening-csv",
+        help="Baseline snapshot CSV (from `stockwatch snapshot ... --csv`) to use as the "
+        "opening balance. Required when the balance view is current-state only.",
+    ),
     csv: Path = CSV_OPT,
     config: Path = CONFIG_OPT,
 ):
@@ -106,9 +139,26 @@ def reconcile(
         raise typer.BadParameter("reconcile works per store: choose fg or rm")
     cfg = load_config(config)
     movement_ds = MOVEMENT_SETS[scope][0]
-    balances = _fetch(cfg, BALANCE_FOR[movement_ds], date_to=date_to.date(), item_code=item, warehouse=warehouse)
-    opening = _snapshot_at(balances, pd.Timestamp(date_from))
-    closing = _snapshot_at(balances, pd.Timestamp(date_to))
+    balance_ds = cfg.datasets[BALANCE_FOR[movement_ds]]
+    if opening_csv is not None:
+        opening = _load_snapshot_csv(opening_csv)
+        closing = _snapshot_at(
+            _fetch(cfg, balance_ds.name, item_code=item, warehouse=warehouse)
+        )
+        console.print(
+            f"[dim]Opening = {opening_csv}; closing = live balance now. "
+            f"--to should be today for the movements to line up.[/dim]"
+        )
+    elif balance_ds.has_date:
+        balances = _fetch(cfg, balance_ds.name, date_to=date_to.date(), item_code=item, warehouse=warehouse)
+        opening = _snapshot_at(balances, pd.Timestamp(date_from))
+        closing = _snapshot_at(balances, pd.Timestamp(date_to))
+    else:
+        raise typer.BadParameter(
+            f"{balance_ds.name} is a current-state view with no history. Capture a "
+            f"baseline first (stockwatch snapshot {balance_ds.name} --csv baseline.csv) "
+            f"and pass it back later via --opening-csv."
+        )
     mov = _movements(cfg, scope, date_from.date(), date_to.date(), item, warehouse)
     result = analysis.reconcile(opening, mov, closing, cfg)
     _print(result, f"Reconciliation {scope.upper()} {date_from:%Y-%m-%d} → {date_to:%Y-%m-%d}", csv)
@@ -128,11 +178,16 @@ def anomalies(
     """Flag negative balances, outlier movements and dormant items — with explanations."""
     cfg = load_config(config)
     mov = _movements(cfg, scope, date_from.date(), date_to.date(), item, warehouse)
-    balance_frames = [
-        _fetch(cfg, BALANCE_FOR[n], date_to=date_to.date(), item_code=item, warehouse=warehouse)
-        for n in MOVEMENT_SETS[scope]
-    ]
-    balances = _snapshot_at(pd.concat(balance_frames, ignore_index=True), pd.Timestamp(date_to))
+    balance_frames = []
+    for n in MOVEMENT_SETS[scope]:
+        ds = cfg.datasets[BALANCE_FOR[n]]
+        fetched = _fetch(
+            cfg, ds.name,
+            date_to=date_to.date() if ds.has_date else None,
+            item_code=item, warehouse=warehouse,
+        )
+        balance_frames.append(_snapshot_at(fetched, pd.Timestamp(date_to) if ds.has_date else None))
+    balances = pd.concat(balance_frames, ignore_index=True)
     result = analysis.detect_anomalies(mov, balances, cfg, as_of=pd.Timestamp(date_to))
     _print(result, "Anomalies", csv)
     _print_lines(explain.explain_anomalies(result))
@@ -141,18 +196,55 @@ def anomalies(
 @app.command()
 def snapshot(
     dataset: str = typer.Argument(..., help="wip_balance | fg_balance | rm_balance"),
-    as_of: datetime = typer.Option(..., "--as-of", help="Snapshot date, YYYY-MM-DD."),
+    as_of: datetime = typer.Option(
+        None, "--as-of", help="Snapshot date, YYYY-MM-DD. Ignored for current-state views."
+    ),
     warehouse: str = WH_OPT,
     csv: Path = CSV_OPT,
     config: Path = CONFIG_OPT,
 ):
-    """Latest balance per item/warehouse as of a date (incl. WIP)."""
+    """Balance per item/warehouse (incl. WIP); current state or as of a date."""
     cfg = load_config(config)
-    if cfg.datasets[dataset].kind != "balance":
+    ds = cfg.datasets[dataset]
+    if ds.kind != "balance":
         raise typer.BadParameter(f"{dataset} is not a balance dataset")
-    df = _fetch(cfg, dataset, date_to=as_of.date() + pd.Timedelta(days=1), warehouse=warehouse)
-    result = _snapshot_at(df, pd.Timestamp(as_of))
-    _print(result.sort_values("quantity", ascending=False), f"{dataset} as of {as_of:%Y-%m-%d}", csv)
+    if ds.has_date:
+        as_of = as_of or datetime.now()
+        df = _fetch(cfg, dataset, date_to=as_of.date() + pd.Timedelta(days=1), warehouse=warehouse)
+        result = _snapshot_at(df, pd.Timestamp(as_of))
+        title = f"{dataset} as of {as_of:%Y-%m-%d}"
+    else:
+        if as_of is not None:
+            console.print(f"[yellow]{dataset} is a current-state view — --as-of ignored, showing now.[/yellow]")
+        result = _snapshot_at(_fetch(cfg, dataset, warehouse=warehouse))
+        title = f"{dataset} (current)"
+    _print(result.sort_values("quantity", ascending=False), title, csv)
+
+
+@app.command()
+def types(
+    scope: str = typer.Argument("all", help="fg | rm | all"),
+    date_from: datetime = typer.Option(None, "--from", "-f", help="Start date (inclusive)."),
+    date_to: datetime = typer.Option(None, "--to", "-t", help="End date (exclusive)."),
+    config: Path = CONFIG_OPT,
+):
+    """Show distinct movement-type codes with counts and net units — use this to fill
+    in the movement_types classification in tables.yml."""
+    cfg = load_config(config)
+    for name in MOVEMENT_SETS[scope]:
+        df = _fetch(
+            cfg, name,
+            date_from=date_from.date() if date_from else None,
+            date_to=date_to.date() if date_to else None,
+        )
+        agg = (
+            df.groupby("movement_type")
+            .agg(rows=("quantity", "size"), total_units=("quantity", "sum"),
+                 min_qty=("quantity", "min"), max_qty=("quantity", "max"))
+            .sort_values("rows", ascending=False)
+            .reset_index()
+        )
+        _print(agg, f"{name} movement types", None)
 
 
 @app.command()

@@ -6,6 +6,8 @@ Reuses the column mappings from tables.yml, applied pandas-side.
 
 from __future__ import annotations
 
+import datetime
+
 import pandas as pd
 
 from .config import ColumnMap, DatasetConfig
@@ -20,9 +22,13 @@ DEFAULT_SHEET_MAP = {
 
 
 def _cell_str(value) -> str:
-    """Stringify a key cell; Excel turns '58' into 58.0 — undo that."""
+    """Stringify a key cell, undoing Excel's type coercions: '58' becomes
+    58.0 (floatified) and fraction sizes like '5/6' become dates (2026-05-06).
+    A datetime in a key cell is therefore read back as month/day."""
     if pd.isna(value):
         return ""
+    if isinstance(value, (datetime.datetime, pd.Timestamp)):
+        return f"{value.month}/{value.day}"
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value).strip()

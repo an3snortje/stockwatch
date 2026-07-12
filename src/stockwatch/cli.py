@@ -36,7 +36,7 @@ def _fetch(cfg: Config, dataset: str, **filters) -> pd.DataFrame:
     return queries.normalize(df, ds)
 
 
-def _movements(cfg: Config, scope: str, date_from: date, date_to: date, item: str | None, wh: str | None) -> pd.DataFrame:
+def _movements(cfg: Config, scope: str, date_from: datetime | date, date_to: datetime | date, item: str | None, wh: str | None) -> pd.DataFrame:
     names = MOVEMENT_SETS[scope]
     frames = [
         _fetch(cfg, n, date_from=date_from, date_to=date_to, item_code=item, warehouse=wh).assign(dataset=n)
@@ -122,15 +122,24 @@ def summary(
 @app.command()
 def reconcile(
     scope: str = typer.Argument(..., help="fg | rm"),
-    date_from: datetime = FROM_OPT,
-    date_to: datetime = TO_OPT,
+    date_from: datetime = typer.Option(
+        None, "--from", "-f",
+        help="Movement window start. With --opening-csv this defaults to the baseline's "
+        "own timestamp (avoids double-counting movements from the snapshot day).",
+    ),
+    date_to: datetime = typer.Option(
+        None, "--to", "-t",
+        help="Movement window end (exclusive). With --opening-csv this defaults to now, "
+        "matching the live closing balance.",
+    ),
     item: str = ITEM_OPT,
     warehouse: str = WH_OPT,
     opening_csv: Path = typer.Option(
         None,
         "--opening-csv",
-        help="Baseline snapshot CSV (from `stockwatch snapshot ... --csv`) to use as the "
-        "opening balance. Required when the balance view is current-state only.",
+        help="Baseline snapshot CSV (from `stockwatch snapshot --csv` or "
+        "`stockwatch import-baseline`) to use as the opening balance. Required when "
+        "the balance view is current-state only.",
     ),
     csv: Path = CSV_OPT,
     config: Path = CONFIG_OPT,
@@ -143,26 +152,36 @@ def reconcile(
     balance_ds = cfg.datasets[BALANCE_FOR[movement_ds]]
     if opening_csv is not None:
         opening = _load_snapshot_csv(opening_csv)
+        if date_from is not None:
+            mov_start = pd.Timestamp(date_from)
+        elif opening["balance_date"].notna().any():
+            mov_start = opening["balance_date"].max()
+        else:
+            raise typer.BadParameter(f"{opening_csv} has no balance_date column — pass --from")
+        mov_end = pd.Timestamp(date_to) if date_to is not None else pd.Timestamp.now()
         closing = _snapshot_at(
             _fetch(cfg, balance_ds.name, item_code=item, warehouse=warehouse)
         )
         console.print(
-            f"[dim]Opening = {opening_csv}; closing = live balance now. "
-            f"--to should be today for the movements to line up.[/dim]"
+            f"[dim]Opening = {opening_csv} @ {mov_start:%Y-%m-%d %H:%M}; closing = live "
+            f"balance now; movements {mov_start:%Y-%m-%d %H:%M} → {mov_end:%Y-%m-%d %H:%M}.[/dim]"
         )
     elif balance_ds.has_date:
+        if date_from is None or date_to is None:
+            raise typer.BadParameter("--from and --to are required without --opening-csv")
+        mov_start, mov_end = pd.Timestamp(date_from), pd.Timestamp(date_to)
         balances = _fetch(cfg, balance_ds.name, date_to=date_to.date(), item_code=item, warehouse=warehouse)
-        opening = _snapshot_at(balances, pd.Timestamp(date_from))
-        closing = _snapshot_at(balances, pd.Timestamp(date_to))
+        opening = _snapshot_at(balances, mov_start)
+        closing = _snapshot_at(balances, mov_end)
     else:
         raise typer.BadParameter(
             f"{balance_ds.name} is a current-state view with no history. Capture a "
             f"baseline first (stockwatch snapshot {balance_ds.name} --csv baseline.csv) "
             f"and pass it back later via --opening-csv."
         )
-    mov = _movements(cfg, scope, date_from.date(), date_to.date(), item, warehouse)
+    mov = _movements(cfg, scope, mov_start.to_pydatetime(), mov_end.to_pydatetime(), item, warehouse)
     result = analysis.reconcile(opening, mov, closing, cfg)
-    _print(result, f"Reconciliation {scope.upper()} {date_from:%Y-%m-%d} → {date_to:%Y-%m-%d}", csv)
+    _print(result, f"Reconciliation {scope.upper()} {mov_start:%Y-%m-%d %H:%M} → {mov_end:%Y-%m-%d %H:%M}", csv)
     _print_lines(explain.explain_reconciliation(result))
 
 

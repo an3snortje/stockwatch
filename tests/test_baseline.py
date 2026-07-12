@@ -22,15 +22,16 @@ def test_composite_key_and_blank_rows():
     )
     sheet = pd.DataFrame(
         {
-            "Style #": [None, "BOB02D", "BOB02D", "BOB02D"],
-            "Size": [None, 58.0, 58.0, 54.0],  # Excel floatified sizes
-            "Product Desc": [None, "Choc Conti", "Choc Conti", "Choc Conti"],
-            "Warehouse": [None, "Finished Goods", "Finished Goods", "Finished Goods"],
-            "Units": [None, 4, 6, 39],
+            "Style #": [None, "BOB02D", "BOB02D", "BOB02D", "KIDS01"],
+            "Size": [None, 58.0, 58.0, 54.0, pd.Timestamp("2026-05-06")],  # floatified + date-mangled 5/6
+            "Product Desc": [None, "Choc Conti", "Choc Conti", "Choc Conti", "Kids Trousers"],
+            "Warehouse": [None, "Finished Goods", "Finished Goods", "Finished Goods", "Quattro"],
+            "Units": [None, 4, 6, 39, 12],
         }
     )
     out = baseline_from_sheet(sheet, ds, AS_OF)
-    assert len(out) == 2  # blank row dropped, size-58 rows aggregated
+    assert len(out) == 3  # blank row dropped, size-58 rows aggregated
+    assert out[out["item_code"] == "KIDS01|5/6"].iloc[0]["quantity"] == 12  # Excel date undone
     r58 = out[out["item_code"] == "BOB02D|58"].iloc[0]
     assert r58["quantity"] == 10
     assert (out["balance_date"] == AS_OF).all()

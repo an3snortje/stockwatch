@@ -247,6 +247,39 @@ def types(
         _print(agg, f"{name} movement types", None)
 
 
+@app.command(name="import-baseline")
+def import_baseline(
+    xlsx: Path = typer.Argument(..., help="iSync SOH export workbook (one sheet per stock type)."),
+    as_of: datetime = typer.Option(..., "--as-of", help="Date the export was taken, YYYY-MM-DD."),
+    out_dir: Path = typer.Option("baselines", "--out-dir", help="Directory for the baseline CSVs."),
+    config: Path = CONFIG_OPT,
+):
+    """Convert an iSync SOH Excel export into baseline CSVs for reconcile --opening-csv.
+
+    Expected sheets (any subset): RM -> rm_balance, Product_Stock -> fg_balance,
+    WIP -> wip_balance. Column names must match the live views (tables.yml).
+    """
+    from .baseline import DEFAULT_SHEET_MAP, baseline_from_sheet
+
+    cfg = load_config(config)
+    xl = pd.ExcelFile(xlsx)
+    matched = {s: d for s, d in DEFAULT_SHEET_MAP.items() if s in xl.sheet_names}
+    if not matched:
+        raise typer.BadParameter(
+            f"No known sheets in {xlsx.name} (found {xl.sheet_names}, "
+            f"expected any of {list(DEFAULT_SHEET_MAP)})"
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for sheet_name, ds_name in matched.items():
+        out = baseline_from_sheet(xl.parse(sheet_name), cfg.datasets[ds_name], pd.Timestamp(as_of))
+        path = out_dir / f"{ds_name}_{as_of:%Y%m%d}.csv"
+        out.to_csv(path, index=False)
+        console.print(
+            f"{sheet_name} -> {path}: {len(out)} item/warehouse rows, "
+            f"total quantity {out['quantity'].sum():,.1f}"
+        )
+
+
 @app.command()
 def columns(
     names: list[str] = typer.Argument(..., help="Table/view names (without schema) to describe."),

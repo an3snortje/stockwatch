@@ -65,8 +65,9 @@ the app never writes to iSync.
   Variances beyond tolerance are explained (unposted transactions, stocktake
   adjustments outside the movement tables, cut-off timing). iSync's balance
   views are current-state only, so openings come from saved baselines:
-  schedule `stockwatch snapshot <ds> --csv baselines/...` (e.g. nightly via
-  n8n) and pass one back with `--opening-csv`.
+  schedule a nightly `stockwatch snapshot-all` (see [`deploy/`](deploy/) —
+  Windows Task Scheduler or an n8n sidecar) and pass one back with
+  `--opening-csv`, or let `report`/`reconcile-chain` auto-discover them.
 - **anomalies** — negative balances (issued stock never received), movement
   outliers (>3σ vs the item's history — often UoM or keying errors), and
   dormant items (no movement in 90 days).

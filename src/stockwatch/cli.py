@@ -58,11 +58,14 @@ def _snapshot_at(balances: pd.DataFrame, ts: pd.Timestamp | None = None) -> pd.D
         df = df[df["balance_date"] == latest]
     if df.empty:
         return df
-    return df.groupby(analysis.KEY, as_index=False).agg(
-        item_description=("item_description", "first"),
-        balance_date=("balance_date", "max"),
-        quantity=("quantity", "sum"),
-    )
+    aggs = {
+        "item_description": ("item_description", "first"),
+        "balance_date": ("balance_date", "max"),
+        "quantity": ("quantity", "sum"),
+    }
+    if "category" in df.columns:
+        aggs["category"] = ("category", "first")
+    return df.groupby(analysis.KEY, as_index=False).agg(**aggs)
 
 
 def _load_snapshot_csv(path: Path) -> pd.DataFrame:
@@ -422,6 +425,39 @@ def snapshot(
         result = _snapshot_at(_fetch(cfg, dataset, warehouse=warehouse))
         title = f"{dataset} (current)"
     _print(result.sort_values("quantity", ascending=False), title, csv)
+
+
+@app.command(name="snapshot-all")
+def snapshot_all(
+    out_dir: Path = typer.Option(
+        Path("baselines"), "--out-dir", "-o",
+        help="Directory for the date-stamped baseline CSVs.",
+    ),
+    as_of: datetime = typer.Option(
+        None, "--as-of",
+        help="Date token for the filenames (YYYY-MM-DD). Defaults to today. The CSV "
+        "still records the live fetch time as balance_date.",
+    ),
+    config: Path = CONFIG_OPT,
+):
+    """Capture rm_balance, fg_balance and wip_balance to baselines/<dataset>_YYYYMMDD.csv
+    in one run — the atom for a nightly n8n / scheduled snapshot job.
+
+    Filenames follow the convention `report` and `reconcile-chain` auto-discover.
+    """
+    cfg = load_config(config)
+    stamp = pd.Timestamp(as_of) if as_of else pd.Timestamp.now()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for ds_name in ("rm_balance", "fg_balance", "wip_balance"):
+        ds = cfg.datasets[ds_name]
+        if ds.kind != "balance":
+            raise typer.BadParameter(f"{ds_name} is not a balance dataset")
+        result = _snapshot_at(_fetch(cfg, ds_name))
+        path = out_dir / f"{ds_name}_{stamp:%Y%m%d}.csv"
+        path.write_text(result.to_csv(index=False))
+        written.append(f"{path} ({len(result):,} rows, {result['quantity'].sum():,.1f})")
+    _print_lines(written)
 
 
 @app.command()

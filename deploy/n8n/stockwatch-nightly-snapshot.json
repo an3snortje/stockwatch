@@ -1,0 +1,97 @@
+{
+  "name": "StockWatch — Nightly Baseline Snapshot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b1a1c0de-0001-4a00-8000-000000000001",
+      "name": "Every day 02:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "command": "mkdir -p /baselines/_logs && /usr/local/bin/stockwatch snapshot-all --out-dir /baselines --config /opt/stockwatch-src/config/tables.yml >> \"/baselines/_logs/snapshot-$(date +%Y%m%d).log\" 2>&1"
+      },
+      "id": "b1a1c0de-0002-4a00-8000-000000000002",
+      "name": "stockwatch snapshot-all",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-exit-0",
+              "leftValue": "={{ $json.exitCode }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "b1a1c0de-0003-4a00-8000-000000000003",
+      "name": "Exit code 0?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {},
+      "id": "b1a1c0de-0004-4a00-8000-000000000004",
+      "name": "Snapshot OK",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [980, 200]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=stockwatch snapshot-all failed (exit {{ $json.exitCode }}). See /baselines/_logs/ on the share."
+      },
+      "id": "b1a1c0de-0005-4a00-8000-000000000005",
+      "name": "Fail the run",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [980, 400]
+    }
+  ],
+  "connections": {
+    "Every day 02:00": {
+      "main": [[{ "node": "stockwatch snapshot-all", "type": "main", "index": 0 }]]
+    },
+    "stockwatch snapshot-all": {
+      "main": [[{ "node": "Exit code 0?", "type": "main", "index": 0 }]]
+    },
+    "Exit code 0?": {
+      "main": [
+        [{ "node": "Snapshot OK", "type": "main", "index": 0 }],
+        [{ "node": "Fail the run", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  },
+  "active": false
+}

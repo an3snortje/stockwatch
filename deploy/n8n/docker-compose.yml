@@ -1,0 +1,44 @@
+# n8n with the stockwatch CLI baked in, plus a CIFS-mounted baselines share.
+#
+#   cd deploy/n8n
+#   cp .env.example .env      # fill in DB + SMB credentials (never commit .env)
+#   docker compose build
+#   docker compose up -d
+#
+# Then import stockwatch-nightly-snapshot.json in the n8n UI and activate it.
+
+services:
+  n8n:
+    build:
+      context: ../..                    # repo root: the package must be in context
+      dockerfile: deploy/n8n/Dockerfile
+    image: stockwatch-n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # --- n8n ---
+      - GENERIC_TIMEZONE=Africa/Johannesburg
+      - TZ=Africa/Johannesburg
+      - N8N_RUNNERS_ENABLED=true
+      # --- iSync read-only DB (values come from .env; NOT committed) ---
+      - MSSQL_SERVER=${MSSQL_SERVER}
+      - MSSQL_PORT=${MSSQL_PORT:-1433}
+      - MSSQL_DATABASE=${MSSQL_DATABASE}
+      - MSSQL_USERNAME=${MSSQL_USERNAME}
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_ENCRYPT=yes
+      - MSSQL_TRUST_SERVER_CERTIFICATE=no
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - baselines:/baselines           # snapshot-all writes here; = the SMB share
+
+volumes:
+  n8n_data:
+  baselines:
+    driver: local
+    driver_opts:
+      type: cifs
+      # uid/gid 1000 = the container's `node` user, so it can write to the share.
+      o: "username=${SMB_USER},password=${SMB_PASSWORD},uid=1000,gid=1000,vers=3.0,file_mode=0664,dir_mode=0775"
+      device: "//${SMB_HOST}/${SMB_SHARE}"

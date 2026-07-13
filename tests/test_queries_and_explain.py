@@ -238,3 +238,33 @@ def test_find_baseline_picks_newest_on_or_before(tmp_path):
     pick = _find_baseline(tmp_path, "rm_balance", pd.Timestamp("2026-07-13"))
     assert pick.name == "rm_balance_20260707.csv"
     assert _find_baseline(tmp_path, "wip_balance", pd.Timestamp("2026-07-13")) is None
+
+
+def test_snapshot_all_writes_one_csv_per_store(tmp_path, monkeypatch):
+    """snapshot-all writes baselines/<dataset>_YYYYMMDD.csv for all three stores,
+    with the naming convention report/reconcile-chain auto-discover."""
+    import pandas as pd
+    from pathlib import Path
+    from stockwatch import cli
+
+    def fake_fetch(cfg, dataset, **filters):
+        return pd.DataFrame(
+            {
+                "item_code": [f"{dataset}-A", f"{dataset}-B"],
+                "warehouse": ["W1", "W1"],
+                "item_description": ["a", "b"],
+                "balance_date": pd.to_datetime(["2026-07-13", "2026-07-13"]),
+                "quantity": [10.0, 5.0],
+            }
+        )
+
+    monkeypatch.setattr(cli, "_fetch", fake_fetch)
+    cli.snapshot_all(out_dir=tmp_path, as_of=None, config=Path("config/tables.yml"))
+
+    stamp = pd.Timestamp.now().strftime("%Y%m%d")
+    for ds in ("rm_balance", "fg_balance", "wip_balance"):
+        path = tmp_path / f"{ds}_{stamp}.csv"
+        assert path.is_file(), f"missing {path}"
+        df = pd.read_csv(path)
+        assert set(["item_code", "warehouse", "quantity"]).issubset(df.columns)
+        assert df["quantity"].sum() == 15.0

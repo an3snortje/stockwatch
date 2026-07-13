@@ -67,6 +67,8 @@ def _snapshot_at(balances: pd.DataFrame, ts: pd.Timestamp | None = None) -> pd.D
 
 def _load_snapshot_csv(path: Path) -> pd.DataFrame:
     """Read a baseline saved earlier by `stockwatch snapshot --csv`."""
+    if not path.is_file():
+        raise typer.BadParameter(f"snapshot file not found: {path}")
     df = pd.read_csv(path)
     missing = {"item_code", "warehouse", "quantity"} - set(df.columns)
     if missing:

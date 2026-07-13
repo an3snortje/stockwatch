@@ -231,6 +231,20 @@ def _find_baseline(baseline_dir: Path, dataset: str, before: pd.Timestamp) -> Pa
     return max(candidates)[1] if candidates else None
 
 
+def _list_baselines(baseline_dir: Path, dataset: str) -> list[tuple[pd.Timestamp, Path]]:
+    """All baseline CSVs for a dataset, as (date, path), oldest first."""
+    out = []
+    if not baseline_dir.is_dir():
+        return out
+    for path in sorted(baseline_dir.glob(f"{dataset}_*.csv")):
+        token = path.stem.removeprefix(f"{dataset}_")[:8]
+        try:
+            out.append((pd.Timestamp(datetime.strptime(token, "%Y%m%d")), path))
+        except ValueError:
+            continue
+    return sorted(out)
+
+
 @app.command()
 def report(
     date_from: datetime = FROM_OPT,
@@ -258,6 +272,52 @@ def report(
         breakdown = analysis.category_summary(mov, cfg)
         _print(breakdown, f"{title} · {date_from:%Y-%m-%d} → {end:%Y-%m-%d}",
                out_dir / fname if out_dir else None)
+
+
+@app.command()
+def dashboard(
+    date_from: datetime = FROM_OPT,
+    date_to: datetime = typer.Option(None, "--to", "-t", help="End (inclusive); defaults to now."),
+    baseline_dir: Path = typer.Option(
+        Path("baselines"), "--baseline-dir",
+        help="Folder of baseline CSVs (<dataset>_YYYYMMDD.csv) for opening/closing balances.",
+    ),
+    out: Path = typer.Option(Path("dashboard.html"), "--out", help="Output HTML file."),
+    config: Path = CONFIG_OPT,
+):
+    """Interactive HTML dashboard: RM by cost type, FG by product, with opening/
+    closing balances and a reconciliation check. In-page date pickers re-total
+    the charts and reconciliation live over the movement window."""
+    from .dashboard import build_dashboard, render_html
+
+    cfg = load_config(config)
+    end = date_to or datetime.now()
+    rm = _fetch(cfg, "rm_movements", date_from=date_from, date_to=end)
+    fg = _fetch(cfg, "fg_movements", date_from=date_from, date_to=end)
+
+    # Baselines: every dated snapshot on disk, plus the live balance dated `end`.
+    baselines: dict[str, list[dict]] = {}
+    for tag, ds_name in (("rm", "rm_balance"), ("fg", "fg_balance"), ("wip", "wip_balance")):
+        pts = []
+        for stamp, path in _list_baselines(baseline_dir, ds_name):
+            snap = _load_snapshot_csv(path)
+            pts.append({"d": stamp.strftime("%Y-%m-%d"),
+                        "q": float(snap["quantity"].sum()),
+                        "v": float(snap["value"].sum()) if "value" in snap.columns else None})
+        live = _snapshot_at(_fetch(cfg, ds_name))
+        pts.append({"d": end.strftime("%Y-%m-%d"),
+                    "q": float(live["quantity"].sum()),
+                    "v": float(live["value"].sum()) if "value" in live.columns else None})
+        baselines[tag] = pts
+
+    data = build_dashboard(rm, fg, cfg, baselines)
+    html = render_html(
+        data, "StockWatch dashboard",
+        f"Movements {date_from:%Y-%m-%d} → {end:%Y-%m-%d} · balances from {baseline_dir}/ + live",
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    console.print(f"[green]Wrote {out}[/green] — open it in a browser.")
 
     def _col(df: pd.DataFrame, name: str) -> float | None:
         return df[name].sum() if name in df.columns else None

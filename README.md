@@ -71,7 +71,14 @@ the app never writes to iSync.
 - **anomalies** — negative balances (issued stock never received), movement
   outliers (>3σ vs the item's history — often UoM or keying errors), and
   dormant items (no movement in 90 days).
-- **snapshot** — latest balance per item/warehouse as of a date, including WIP.
+- **snapshot** / **snapshot-all** — latest balance per item/warehouse (all three
+  stores at once for `snapshot-all`), including WIP; the nightly baseline atom.
+- **report** — RM movements by cost type, FG movements by product, with opening/
+  closing balances (qty + Rand) for RM, FG and WIP.
+- **dashboard** — self-contained interactive HTML: the same RM-by-cost-type and
+  FG-by-product breakdowns as diverging bar charts, opening/closing balances and
+  a reconciliation check per stock type, with in-page start/end date pickers that
+  re-total everything live.
 
 ## Architecture
 

@@ -77,6 +77,36 @@ def movement_summary(movements: pd.DataFrame, cfg: Config, freq: str = "MS") -> 
     return pivot.sort_values(KEY + ["period"]).reset_index(drop=True)
 
 
+def category_summary(movements: pd.DataFrame, cfg: Config, by: str = "category") -> pd.DataFrame:
+    """Receipts / issues / adjustments / net per grouping column (e.g. cost type,
+    product), with net Rand value when the movements carry one."""
+    if by not in movements.columns:
+        raise KeyError(f"movements have no {by!r} column — map it in tables.yml")
+    df = classify_movements(movements, cfg)
+    df[by] = df[by].astype(str).str.strip().replace("", "(unspecified)")
+
+    pivot = df.pivot_table(
+        index=by, columns="direction", values="signed_qty", aggfunc="sum", fill_value=0.0
+    )
+    pivot.columns.name = None
+    for col in ("receipt", "issue", "adjustment", "other"):
+        if col not in pivot.columns:
+            pivot[col] = 0.0
+    pivot["net"] = pivot[["receipt", "issue", "adjustment", "other"]].sum(axis=1)
+    pivot["movements"] = df.groupby(by).size()
+    if "value" in df.columns:
+        pivot["net_value"] = df.groupby(by)["value"].sum()
+    cols = ["movements", "receipt", "issue", "adjustment", "other", "net"]
+    if "net_value" in pivot.columns:
+        cols.append("net_value")
+    return (
+        pivot[cols]
+        .reset_index()
+        .sort_values("net", key=lambda s: s.abs(), ascending=False)
+        .reset_index(drop=True)
+    )
+
+
 def reconcile(
     opening: pd.DataFrame,
     movements: pd.DataFrame,

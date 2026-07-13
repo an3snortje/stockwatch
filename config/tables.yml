@@ -26,6 +26,7 @@ datasets:
       reference: Reference
       job: fJobNumber                  # DO/IC = production job; else holding job
       value: MovementValue             # Rand value, used by `stockwatch flow`
+      category: ProdDesc               # grouping for `stockwatch report` (by product)
 
   rm_movements:
     kind: movement
@@ -40,6 +41,7 @@ datasets:
       reference: fHeaderNo
       job: fJobNumber                  # DO/IC = production job; else holding job
       value: MovementValue             # Rand value, used by `stockwatch flow`
+      category: CostType               # grouping for `stockwatch report` (by cost type)
 
   wip_balance:
     kind: balance
@@ -49,6 +51,7 @@ datasets:
       item_description: JobDescription
       warehouse: Customer              # grouping dimension; no warehouse in WIP
       balance_date: null               # current-state view
+      category: CostType
       # WIP balance = job value x completion ratio. Ratio is stored 0-100,
       # hence the 0.01 factor. NOTE: "quantity" for WIP is therefore a
       # monetary value (Rand), not units.
@@ -63,6 +66,7 @@ datasets:
       warehouse: Warehouse
       balance_date: null               # current-state view
       quantity: Units
+      category: Product
 
   rm_balance:
     kind: balance
@@ -73,6 +77,7 @@ datasets:
       warehouse: Location              # matches rm_movements
       balance_date: null               # current-state view
       quantity: SOH Units
+      category: Cost Type
 
 # How movement_type values classify into directions. Anything not listed
 # is bucketed as "other" and still included in net movement by sign.

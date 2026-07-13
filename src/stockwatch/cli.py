@@ -212,6 +212,69 @@ def reconcile(
     _print_lines(explain.explain_reconciliation(result))
 
 
+def _find_baseline(baseline_dir: Path, dataset: str, before: pd.Timestamp) -> Path | None:
+    """Newest baseline CSV named <dataset>_YYYYMMDD*.csv dated on or before `before`."""
+    candidates = []
+    for path in sorted(baseline_dir.glob(f"{dataset}_*.csv")):
+        token = path.stem.removeprefix(f"{dataset}_")[:8]
+        try:
+            stamp = pd.Timestamp(datetime.strptime(token, "%Y%m%d"))
+        except ValueError:
+            continue
+        if stamp <= before:
+            candidates.append((stamp, path))
+    return max(candidates)[1] if candidates else None
+
+
+@app.command()
+def report(
+    date_from: datetime = FROM_OPT,
+    date_to: datetime = typer.Option(None, "--to", "-t", help="End (exclusive); defaults to now."),
+    baseline_dir: Path = typer.Option(
+        Path("baselines"), "--baseline-dir",
+        help="Folder of baseline CSVs (<dataset>_YYYYMMDD.csv); the newest one on or "
+        "before --from becomes the opening balance.",
+    ),
+    out_dir: Path = typer.Option(None, "--out-dir", help="Also write the three tables as CSVs here."),
+    config: Path = CONFIG_OPT,
+):
+    """Movement breakdown (RM by cost type, FG by product) with opening and
+    closing balances for RM, FG and WIP."""
+    cfg = load_config(config)
+    end = date_to or datetime.now()
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    for ds_name, title, fname in (
+        ("rm_movements", "Raw material movements by cost type", "rm_by_cost_type.csv"),
+        ("fg_movements", "Finished goods movements by product", "fg_by_product.csv"),
+    ):
+        mov = _fetch(cfg, ds_name, date_from=date_from, date_to=end)
+        breakdown = analysis.category_summary(mov, cfg)
+        _print(breakdown, f"{title} · {date_from:%Y-%m-%d} → {end:%Y-%m-%d}",
+               out_dir / fname if out_dir else None)
+
+    rows = []
+    for ds_name, label, unit in (
+        ("rm_balance", "Raw materials", "units"),
+        ("fg_balance", "Finished goods", "units"),
+        ("wip_balance", "Work in progress", "R"),
+    ):
+        closing_total = _snapshot_at(_fetch(cfg, ds_name))["quantity"].sum()
+        baseline = _find_baseline(baseline_dir, ds_name, pd.Timestamp(date_from))
+        opening_total = _load_snapshot_csv(baseline)["quantity"].sum() if baseline else None
+        rows.append({
+            "stock type": label,
+            "opening": f"{opening_total:,.0f}" if opening_total is not None else "no baseline",
+            "closing (live)": f"{closing_total:,.0f}",
+            "change": f"{closing_total - opening_total:+,.0f}" if opening_total is not None else "-",
+            "unit": unit,
+            "opening source": baseline.name if baseline else "-",
+        })
+    balances = pd.DataFrame(rows)
+    _print(balances, f"Stock balances · opening vs live", out_dir / "balances.csv" if out_dir else None)
+
+
 @app.command()
 def flow(
     scope: str = typer.Argument("all", help="fg | rm | all"),

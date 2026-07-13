@@ -226,3 +226,15 @@ datasets:
     )
     with pytest.raises(ValueError, match="at least two factors"):
         load_config(bad)
+
+
+def test_find_baseline_picks_newest_on_or_before(tmp_path):
+    import pandas as pd
+    from stockwatch.cli import _find_baseline
+
+    for name in ("rm_balance_20260630.csv", "rm_balance_20260707.csv",
+                 "rm_balance_20260801.csv", "fg_balance_20260707.csv", "rm_balance_junk.csv"):
+        (tmp_path / name).write_text("item_code,warehouse,quantity\n")
+    pick = _find_baseline(tmp_path, "rm_balance", pd.Timestamp("2026-07-13"))
+    assert pick.name == "rm_balance_20260707.csv"
+    assert _find_baseline(tmp_path, "wip_balance", pd.Timestamp("2026-07-13")) is None

@@ -164,3 +164,33 @@ def test_classify_chain_mixed():
     )
     out = classify_chain(rows).set_index("item_code")
     assert out.loc["M|1", "classification"] == "mixed"
+
+
+def test_category_summary_groups_and_totals(cfg):
+    from stockwatch.analysis import category_summary
+
+    mov = _mov(
+        [
+            ("F1", "Fabric", "2026-07-01", "GRN", 100, "G1"),
+            ("F2", "Fabric", "2026-07-02", "ISSUE", -80, "J1"),
+            ("T1", "Trims", "2026-07-03", "GRN", 500, "G2"),
+        ]
+    )
+    cfg.issues_stored_positive = False
+    mov["category"] = ["Fabric", "Fabric", "Trims Labels"]
+    mov["value"] = [3100.0, -2480.0, 250.0]
+    out = category_summary(mov, cfg).set_index("category")
+    assert out.loc["Fabric", "receipt"] == 100
+    assert out.loc["Fabric", "issue"] == -80
+    assert out.loc["Fabric", "net"] == 20
+    assert out.loc["Fabric", "net_value"] == 620.0
+    assert out.loc["Trims Labels", "net"] == 500
+    assert out.loc["Trims Labels", "movements"] == 1
+
+
+def test_category_summary_requires_column(cfg):
+    from stockwatch.analysis import category_summary
+
+    mov = _mov([("F1", "W", "2026-07-01", "GRN", 1, "r")])
+    with pytest.raises(KeyError, match="tables.yml"):
+        category_summary(mov, cfg)

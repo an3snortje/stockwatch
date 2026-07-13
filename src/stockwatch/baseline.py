@@ -64,11 +64,11 @@ def baseline_from_sheet(
     sheet: pd.DataFrame, ds: DatasetConfig, as_of: pd.Timestamp
 ) -> pd.DataFrame:
     """Aggregate one export sheet into a per-item/warehouse baseline."""
+    canon_cols = ["item_code", "item_description", "warehouse", "quantity"]
+    if ds.columns.get("category") is not None:
+        canon_cols.append("category")
     df = pd.DataFrame(
-        {
-            canon: _series(sheet, ds.columns[canon], f"{ds.name}.{canon}")
-            for canon in ("item_code", "item_description", "warehouse", "quantity")
-        }
+        {canon: _series(sheet, ds.columns[canon], f"{ds.name}.{canon}") for canon in canon_cols}
     )
     for col in ("item_code", "warehouse"):
         df[col] = df[col].map(_cell_str)
@@ -79,9 +79,10 @@ def baseline_from_sheet(
     df = df[df["item_code"].str.replace("|", "", regex=False).str.strip() != ""]
     df.loc[df["warehouse"] == "", "warehouse"] = "-"
 
-    out = df.groupby(KEY, as_index=False).agg(
-        item_description=("item_description", "first"),
-        quantity=("quantity", "sum"),
-    )
+    aggs = {"item_description": ("item_description", "first"), "quantity": ("quantity", "sum")}
+    if "category" in df.columns:
+        df["category"] = df["category"].map(_cell_str)
+        aggs["category"] = ("category", "first")
+    out = df.groupby(KEY, as_index=False).agg(**aggs)
     out.insert(2, "balance_date", as_of)
     return out

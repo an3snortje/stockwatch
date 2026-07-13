@@ -119,13 +119,19 @@ issues_stored_positive: false
 # Movements that appear in the ledger but do NOT change free stock in the
 # balance views — reconcile ignores them (they still show in summary/
 # movements). Conditions within a rule are ANDed; any matching rule excludes.
-# Confirmed via drill-down 2026-07-13: iSync SOH (1762 for ESCT434A|34) did
-# not include the PPO receipt into Finished Goods, nor HAMISA adjust-ins
-# referencing already-invoiced DOs.
+#
+# NOTE: a blanket "RECEIVED / Finished Goods / PPO-" rule was tried and
+# REMOVED — it correctly zeroed the ESCT434A phantom-receipt family but
+# wrongly suppressed 46 real production receipts (e.g. ESC434A|40, whose
+# SOH genuinely rose 264->664). PPO RECEIVED is used for BOTH phantom and
+# real receipts and cannot be separated by type/warehouse/reference, so it
+# must not be excluded by type. The phantom case is being handled by the
+# transfer-offset rule instead (see reconcile_offset_pairs, WIP).
+#
+# The HAMISA adjust-in rule below broke 0 clean items and cleaned HAMISA
+# from -2,911 to +174; adjust-ins referencing already-invoiced DOs are
+# corrections, not new stock.
 reconcile_exclusions:
-  - movement_type: RECEIVED
-    warehouse: Finished Goods
-    reference_prefix: PPO-
   - movement_type: STOCK ADJ IN - STOCK ADJUST- IN
     warehouse: HAMISA JHB
 

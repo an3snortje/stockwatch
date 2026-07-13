@@ -63,6 +63,12 @@ def build_select(
             raise ValueError(f"Dataset {ds.name} has no warehouse column to filter on")
         where.append(f"{_expr(ds.columns['warehouse'])} = :warehouse")
         params["warehouse"] = warehouse
+    for i, rule in enumerate(ds.exclude_where):
+        col = _bracket(rule["column"])
+        key = f"exclude_{i}"
+        # Keep NULLs; drop only rows that explicitly equal the excluded value.
+        where.append(f"({col} IS NULL OR {col} <> :{key})")
+        params[key] = rule["equals"]
     if where:
         sql += " WHERE " + " AND ".join(where)
     return sql, params

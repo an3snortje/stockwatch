@@ -79,8 +79,13 @@ datasets:
       warehouse: Location              # matches rm_movements
       balance_date: null               # current-state view
       quantity: SOH Units
-      value: {product: [SOH Units, Stock Cost]}   # Rand value of stock on hand
+      value: {product: [Units, Stock Cost]}   # Rand value = Units x unit Stock Cost
       category: Cost Type
+    # Drop items flagged missing in ItemStatus — they aren't real on-hand stock.
+    # If the exact label differs (e.g. "MISSING"), change `equals` here.
+    exclude_where:
+      - column: ItemStatus
+        equals: Missing
 
 # How movement_type values classify into directions. Anything not listed
 # is bucketed as "other" and still included in net movement by sign.

@@ -40,6 +40,51 @@ def test_build_select_no_filters(ds):
     assert params == {}
 
 
+def test_build_select_exclude_where():
+    from stockwatch.config import DatasetConfig
+
+    ds = DatasetConfig(
+        name="rm_balance",
+        kind="balance",
+        table="Reporting.vFabricListing",
+        columns={
+            "item_code": "Stock No",
+            "item_description": "Stock Desc",
+            "warehouse": "Location",
+            "balance_date": None,
+            "quantity": "SOH Units",
+        },
+        exclude_where=[{"column": "ItemStatus", "equals": "Missing"}],
+    )
+    sql, params = build_select(ds)
+    assert "([ItemStatus] IS NULL OR [ItemStatus] <> :exclude_0)" in sql
+    assert params == {"exclude_0": "Missing"}
+
+
+def test_config_rejects_bad_exclude_where(tmp_path):
+    bad = tmp_path / "tables.yml"
+    bad.write_text(
+        """
+datasets:
+  rm_balance:
+    kind: balance
+    table: Reporting.vFabricListing
+    columns:
+      item_code: Stock No
+      item_description: Stock Desc
+      warehouse: Location
+      balance_date: null
+      quantity: SOH Units
+    exclude_where:
+      - column: "Item; DROP--"
+        equals: Missing
+movement_types: {}
+"""
+    )
+    with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+        load_config(bad)
+
+
 def test_load_config_rejects_unsafe_identifier(tmp_path):
     bad = tmp_path / "tables.yml"
     bad.write_text(

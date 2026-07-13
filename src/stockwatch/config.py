@@ -37,6 +37,9 @@ class DatasetConfig:
     kind: str  # "movement" | "balance"
     table: str
     columns: dict[str, ColumnMap]
+    # Row filters applied in the SELECT: exclude rows where <column> equals
+    # <value> (NULLs are kept). Each entry: {"column": str, "equals": scalar}.
+    exclude_where: list[dict] = field(default_factory=list)
 
     @property
     def date_column(self) -> str:
@@ -110,7 +113,22 @@ def load_config(path: str | Path) -> Config:
                         )
             else:
                 _validate_identifier(src, f"dataset {name} columns")
-        datasets[name] = DatasetConfig(name=name, kind=kind, table=spec["table"], columns=columns)
+        exclude_where = spec.get("exclude_where") or []
+        for j, rule in enumerate(exclude_where):
+            if not isinstance(rule, dict) or set(rule) != {"column", "equals"}:
+                raise ValueError(
+                    f"Dataset {name}: exclude_where[{j}] must be "
+                    f"{{column: <name>, equals: <value>}}"
+                )
+            _validate_identifier(rule["column"], f"dataset {name} exclude_where")
+            if not isinstance(rule["equals"], (str, int, float)):
+                raise ValueError(
+                    f"Dataset {name}: exclude_where[{j}].equals must be a string or number"
+                )
+        datasets[name] = DatasetConfig(
+            name=name, kind=kind, table=spec["table"], columns=columns,
+            exclude_where=exclude_where,
+        )
 
     exclusions = raw.get("reconcile_exclusions") or []
     allowed_keys = {"movement_type", "warehouse", "reference_prefix"}

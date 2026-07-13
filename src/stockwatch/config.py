@@ -52,6 +52,7 @@ class DatasetConfig:
 class Config:
     datasets: dict[str, DatasetConfig]
     movement_types: dict[str, list[str]]
+    reconcile_exclusions: list[dict] = field(default_factory=list)
     issues_stored_positive: bool = True
     dormant_days: int = 90
     outlier_zscore: float = 3.0
@@ -111,10 +112,23 @@ def load_config(path: str | Path) -> Config:
                 _validate_identifier(src, f"dataset {name} columns")
         datasets[name] = DatasetConfig(name=name, kind=kind, table=spec["table"], columns=columns)
 
+    exclusions = raw.get("reconcile_exclusions") or []
+    allowed_keys = {"movement_type", "warehouse", "reference_prefix"}
+    for i, rule in enumerate(exclusions):
+        if not isinstance(rule, dict) or not rule:
+            raise ValueError(f"reconcile_exclusions[{i}] must be a non-empty mapping")
+        unknown = rule.keys() - allowed_keys
+        if unknown:
+            raise ValueError(
+                f"reconcile_exclusions[{i}]: unknown key(s) {sorted(unknown)}; "
+                f"allowed: {sorted(allowed_keys)}"
+            )
+
     analysis = raw.get("analysis", {})
     return Config(
         datasets=datasets,
         movement_types={k: list(v) for k, v in raw.get("movement_types", {}).items()},
+        reconcile_exclusions=exclusions,
         issues_stored_positive=bool(raw.get("issues_stored_positive", True)),
         dormant_days=int(analysis.get("dormant_days", 90)),
         outlier_zscore=float(analysis.get("outlier_zscore", 3.0)),

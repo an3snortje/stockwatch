@@ -116,6 +116,19 @@ movement_types:
 # `stockwatch types all` — so no sign-flipping is applied.
 issues_stored_positive: false
 
+# Movements that appear in the ledger but do NOT change free stock in the
+# balance views — reconcile ignores them (they still show in summary/
+# movements). Conditions within a rule are ANDed; any matching rule excludes.
+# Confirmed via drill-down 2026-07-13: iSync SOH (1762 for ESCT434A|34) did
+# not include the PPO receipt into Finished Goods, nor HAMISA adjust-ins
+# referencing already-invoiced DOs.
+reconcile_exclusions:
+  - movement_type: RECEIVED
+    warehouse: Finished Goods
+    reference_prefix: PPO-
+  - movement_type: STOCK ADJ IN - STOCK ADJUST- IN
+    warehouse: HAMISA JHB
+
 analysis:
   # Flag items with no movement for this many days as dormant.
   dormant_days: 90

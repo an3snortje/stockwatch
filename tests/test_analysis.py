@@ -90,3 +90,34 @@ def test_detect_outlier_movement(cfg):
     outliers = out[out["kind"] == "outlier_movement"]
     assert len(outliers) == 1
     assert "500" in outliers.iloc[0]["detail"]
+
+
+def test_apply_exclusions_rules():
+    from stockwatch.analysis import apply_exclusions
+
+    mov = _mov(
+        [
+            ("ESCT434A|34", "Finished Goods", "2026-07-07", "RECEIVED", 320, "PPO-083220"),
+            ("ESCT434A|34", "Finished Goods", "2026-07-07", "RECEIVED", 100, "GRN-000123"),
+            ("HEM-P750|102", "HAMISA JHB", "2026-07-07", "STOCK ADJ IN - STOCK ADJUST- IN", 925, "D50746"),
+            ("HEM-P750|102", "Prod GRV", "2026-07-09", "RECEIVED", 275, "PPO-082930"),
+        ]
+    )
+    rules = [
+        {"movement_type": "RECEIVED", "warehouse": "Finished Goods", "reference_prefix": "PPO-"},
+        {"movement_type": "STOCK ADJ IN - STOCK ADJUST- IN", "warehouse": "HAMISA JHB"},
+    ]
+    kept, excluded = apply_exclusions(mov, rules)
+    assert len(excluded) == 2
+    assert set(excluded["quantity"]) == {320, 925}
+    # GRN receipt at Finished Goods and PPO receipt at Prod GRV are kept
+    assert len(kept) == 2
+    assert set(kept["quantity"]) == {100, 275}
+
+
+def test_apply_exclusions_no_rules_is_passthrough():
+    from stockwatch.analysis import apply_exclusions
+
+    mov = _mov([("A", "W", "2026-07-01", "RECEIVED", 5, "X")])
+    kept, excluded = apply_exclusions(mov, [])
+    assert len(kept) == 1 and len(excluded) == 0

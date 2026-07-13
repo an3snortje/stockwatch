@@ -180,6 +180,12 @@ def reconcile(
             f"and pass it back later via --opening-csv."
         )
     mov = _movements(cfg, scope, mov_start.to_pydatetime(), mov_end.to_pydatetime(), item, warehouse)
+    mov, excluded = analysis.apply_exclusions(mov, cfg.reconcile_exclusions)
+    if len(excluded):
+        console.print(
+            f"[dim]Excluded {len(excluded)} movement(s) totalling "
+            f"{excluded['quantity'].sum():+,.1f} units via reconcile_exclusions rules.[/dim]"
+        )
     result = analysis.reconcile(opening, mov, closing, cfg)
     _print(result, f"Reconciliation {scope.upper()} {mov_start:%Y-%m-%d %H:%M} → {mov_end:%Y-%m-%d %H:%M}", csv)
     _print_lines(explain.explain_reconciliation(result))

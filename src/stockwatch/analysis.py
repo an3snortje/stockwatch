@@ -30,6 +30,28 @@ def classify_movements(movements: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     return df
 
 
+def apply_exclusions(movements: pd.DataFrame, rules: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split movements into (kept, excluded) using reconcile_exclusions rules.
+
+    Each rule's conditions are ANDed; a row matching any rule is excluded.
+    Conditions: movement_type (exact, case-insensitive), warehouse (exact),
+    reference_prefix (startswith).
+    """
+    if not rules or movements.empty:
+        return movements, movements.iloc[0:0]
+    excluded = pd.Series(False, index=movements.index)
+    for rule in rules:
+        match = pd.Series(True, index=movements.index)
+        if "movement_type" in rule:
+            match &= movements["movement_type"] == str(rule["movement_type"]).upper()
+        if "warehouse" in rule:
+            match &= movements["warehouse"] == rule["warehouse"]
+        if "reference_prefix" in rule:
+            match &= movements["reference"].str.startswith(str(rule["reference_prefix"]))
+        excluded |= match
+    return movements[~excluded], movements[excluded]
+
+
 def movement_summary(movements: pd.DataFrame, cfg: Config, freq: str = "MS") -> pd.DataFrame:
     """Receipts / issues / adjustments / net per item, warehouse and period."""
     df = classify_movements(movements, cfg)

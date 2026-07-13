@@ -287,9 +287,10 @@ def movements(
     cfg = load_config(config)
     end = date_to or datetime.now()
     mov = _movements(cfg, scope, date_from, end, item, warehouse)
-    mov = mov.sort_values("movement_date")[
-        ["movement_date", "dataset", "item_code", "warehouse", "movement_type", "quantity", "reference", "item_description"]
-    ]
+    cols = ["movement_date", "dataset", "job", "item_code", "warehouse",
+            "movement_type", "quantity", "reference", "item_description"]
+    cols = [c for c in cols if c in mov.columns]
+    mov = mov.sort_values("movement_date")[cols]
     _print(mov, f"Movements {date_from:%Y-%m-%d %H:%M} → {end:%Y-%m-%d %H:%M}", csv)
     console.print(f"[dim]net: {mov['quantity'].sum():+,.1f} units across {len(mov)} transactions[/dim]")
 

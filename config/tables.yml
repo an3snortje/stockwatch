@@ -24,6 +24,7 @@ datasets:
       movement_type: MovementType
       quantity: fUnits
       reference: Reference
+      job: fJobNumber                  # DO/IC = production job; else holding job
 
   rm_movements:
     kind: movement
@@ -36,6 +37,7 @@ datasets:
       movement_type: MovementType
       quantity: fUnits
       reference: fHeaderNo
+      job: fJobNumber                  # DO/IC = production job; else holding job
 
   wip_balance:
     kind: balance

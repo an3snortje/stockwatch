@@ -81,7 +81,7 @@ def normalize(df: pd.DataFrame, ds: DatasetConfig) -> pd.DataFrame:
     # Strip whitespace around composite-key separators too — source columns
     # can carry trailing spaces ("M/OLIVE |30" vs "M/OLIVE|30").
     df["item_code"] = df["item_code"].str.replace(r"\s*\|\s*", "|", regex=True)
-    for col in ("item_description", "reference"):
+    for col in ("item_description", "reference", "job"):
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.strip()
     if "movement_type" in df.columns:

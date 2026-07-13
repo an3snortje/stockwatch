@@ -25,6 +25,7 @@ datasets:
       quantity: fUnits
       reference: Reference
       job: fJobNumber                  # DO/IC = production job; else holding job
+      value: MovementValue             # Rand value, used by `stockwatch flow`
 
   rm_movements:
     kind: movement
@@ -38,6 +39,7 @@ datasets:
       quantity: fUnits
       reference: fHeaderNo
       job: fJobNumber                  # DO/IC = production job; else holding job
+      value: MovementValue             # Rand value, used by `stockwatch flow`
 
   wip_balance:
     kind: balance

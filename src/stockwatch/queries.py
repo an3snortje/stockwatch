@@ -76,6 +76,8 @@ def normalize(df: pd.DataFrame, ds: DatasetConfig) -> pd.DataFrame:
         # Current-state view: stamp the fetch time as the snapshot date.
         df[ds.date_column] = pd.Timestamp.now().floor("s")
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
+    if "value" in df.columns:
+        df["value"] = pd.to_numeric(df["value"], errors="coerce").fillna(0.0)
     for col in ("item_code", "warehouse"):
         df[col] = df[col].fillna("-").astype(str).str.strip()
     # Strip whitespace around composite-key separators too — source columns

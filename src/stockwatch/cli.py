@@ -212,6 +212,47 @@ def reconcile(
     _print_lines(explain.explain_reconciliation(result))
 
 
+@app.command()
+def flow(
+    scope: str = typer.Argument("all", help="fg | rm | all"),
+    date_from: datetime = FROM_OPT,
+    date_to: datetime = typer.Option(None, "--to", "-t", help="End (exclusive); defaults to now."),
+    warehouse: str = WH_OPT,
+    measure: str = typer.Option("value", "--measure", help="value (Rand) | units"),
+    out: Path = typer.Option(Path("flow.html"), "--out", help="Output HTML file."),
+    csv: Path = CSV_OPT,
+    config: Path = CONFIG_OPT,
+):
+    """Visualize the flow of stock: Vendors -> RM -> Production -> FG -> Customers.
+
+    Generates a self-contained interactive Sankey HTML (dark/light aware),
+    netted so returns and cancellations reduce their forward edge.
+    """
+    from .flow import build_flow, render_html
+
+    cfg = load_config(config)
+    end = date_to or datetime.now()
+    mov = _movements(cfg, scope, date_from, end, None, warehouse)
+    result = build_flow(mov, cfg, measure=measure)
+    if result["measure"] != measure:
+        console.print("[yellow]No value column/data — fell back to units.[/yellow]")
+    subtitle = (
+        f"{date_from:%d %b %Y %H:%M} → {end:%d %b %Y %H:%M} · "
+        f"{len(mov):,} movements · measure: {'Rand value' if result['measure']=='value' else 'units'}"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_html(result, "StockWatch — stock flow", subtitle), encoding="utf-8")
+    if csv:
+        pd.DataFrame(result["links"]).to_csv(csv, index=False)
+        console.print(f"[dim]Wrote {len(result['links'])} flow edges to {csv}[/dim]")
+    total = sum(l["weight"] for l in result["links"])
+    console.print(
+        f"Wrote {out} — {len(result['nodes'])} nodes, {len(result['links'])} flows, "
+        f"total {'R ' if result['measure']=='value' else ''}{total:,.0f}"
+        f"{'' if result['measure']=='value' else ' units'}. Open it in a browser."
+    )
+
+
 @app.command(name="reconcile-chain")
 def reconcile_chain(
     scope: str = typer.Argument(..., help="fg | rm"),

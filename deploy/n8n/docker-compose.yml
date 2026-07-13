@@ -1,27 +1,26 @@
-# n8n with the stockwatch CLI baked in, plus a CIFS-mounted baselines share.
+# Standalone stockwatch sidecar — runs ALONGSIDE your existing n8n, does not
+# touch it. Your n8n triggers `stockwatch snapshot-all` in here via `docker exec`.
 #
 #   cd deploy/n8n
 #   cp .env.example .env      # fill in DB + SMB credentials (never commit .env)
 #   docker compose build
 #   docker compose up -d
 #
-# Then import stockwatch-nightly-snapshot.json in the n8n UI and activate it.
+# Verify it works, then wire your n8n (see README):
+#   docker exec stockwatch stockwatch snapshot-all --out-dir /baselines \
+#     --config /opt/stockwatch-src/config/tables.yml
 
 services:
-  n8n:
+  stockwatch:
     build:
       context: ../..                    # repo root: the package must be in context
       dockerfile: deploy/n8n/Dockerfile
-    image: stockwatch-n8n:latest
+    image: stockwatch:latest
+    container_name: stockwatch          # fixed name so `docker exec stockwatch ...` is stable
     restart: unless-stopped
-    ports:
-      - "5678:5678"
     environment:
-      # --- n8n ---
-      - GENERIC_TIMEZONE=Africa/Johannesburg
       - TZ=Africa/Johannesburg
-      - N8N_RUNNERS_ENABLED=true
-      # --- iSync read-only DB (values come from .env; NOT committed) ---
+      # --- iSync read-only DB (values from .env; NOT committed) ---
       - MSSQL_SERVER=${MSSQL_SERVER}
       - MSSQL_PORT=${MSSQL_PORT:-1433}
       - MSSQL_DATABASE=${MSSQL_DATABASE}
@@ -30,15 +29,14 @@ services:
       - MSSQL_ENCRYPT=yes
       - MSSQL_TRUST_SERVER_CERTIFICATE=no
     volumes:
-      - n8n_data:/home/node/.n8n
-      - baselines:/baselines           # snapshot-all writes here; = the SMB share
+      - baselines:/baselines            # snapshot-all writes here; = the SMB share
 
 volumes:
-  n8n_data:
   baselines:
     driver: local
     driver_opts:
       type: cifs
-      # uid/gid 1000 = the container's `node` user, so it can write to the share.
-      o: "username=${SMB_USER},password=${SMB_PASSWORD},uid=1000,gid=1000,vers=3.0,file_mode=0664,dir_mode=0775"
+      # uid/gid 0: the sidecar runs as root, so files are writable inside it.
+      # Adjust file_mode/dir_mode to taste for readers on the share.
+      o: "username=${SMB_USER},password=${SMB_PASSWORD},uid=0,gid=0,vers=3.0,file_mode=0664,dir_mode=0775"
       device: "//${SMB_HOST}/${SMB_SHARE}"

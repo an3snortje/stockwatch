@@ -1,35 +1,33 @@
-# Custom n8n image with the stockwatch CLI + Microsoft ODBC Driver 18 baked in,
-# so an n8n "Execute Command" node can run `stockwatch snapshot-all` directly
-# against the iSync Azure SQL database.
+# Standalone stockwatch sidecar: a small long-lived container that sits next to
+# your existing n8n and runs `stockwatch snapshot-all` on demand (via
+# `docker exec`). It does NOT replace or modify your n8n container.
 #
-# Build from the REPO ROOT so the whole package is in the build context:
+# Debian slim keeps the Microsoft ODBC Driver 18 install simple and well-supported.
+#
+# Build from the REPO ROOT (the package must be in the build context):
 #   docker compose -f deploy/n8n/docker-compose.yml build
-ARG N8N_VERSION=1.70.0
-FROM docker.n8n.io/n8nio/n8n:${N8N_VERSION}
+FROM python:3.12-slim
 
-USER root
+# --- Microsoft ODBC Driver 18 (Debian 12 / bookworm) -----------------------
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list -o /etc/apt/sources.list.d/mssql-release.list \
+    && sed -i 's|https://|[signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://|' /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc \
+    && apt-get purge -y gnupg \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
-# --- Microsoft ODBC Driver 18 (Alpine / musl build) ------------------------
-# Version-pinned .apk from Microsoft. Bump MSODBC_VERSION when a newer Alpine
-# build ships: https://learn.microsoft.com/sql/connect/odbc/linux-mac/install-microsoft-odbc-driver-sql-server-macos#alpine17
-ARG MSODBC_VERSION=18.4.1.1-1
-RUN apk add --no-cache curl \
-    && curl -fsSL -O "https://download.microsoft.com/download/3/5/5/355d7943-a338-41a7-858d-53b259ea33f5/msodbcsql18_${MSODBC_VERSION}_amd64.apk" \
-    && apk add --allow-untrusted "msodbcsql18_${MSODBC_VERSION}_amd64.apk" \
-    && rm -f "msodbcsql18_${MSODBC_VERSION}_amd64.apk"
-
-# --- Python + stockwatch ---------------------------------------------------
-# unixodbc is the runtime; the .build group compiles pyodbc, then is removed.
-RUN apk add --no-cache python3 py3-pip unixodbc \
-    && apk add --no-cache --virtual .build gcc g++ musl-dev python3-dev unixodbc-dev
+# --- stockwatch ------------------------------------------------------------
 COPY . /opt/stockwatch-src
-RUN python3 -m venv /opt/stockwatch \
-    && /opt/stockwatch/bin/pip install --no-cache-dir /opt/stockwatch-src \
-    && ln -s /opt/stockwatch/bin/stockwatch /usr/local/bin/stockwatch \
-    && apk del .build
+RUN pip install --no-cache-dir /opt/stockwatch-src
 
-# config/tables.yml lives at /opt/stockwatch-src/config/tables.yml — the
-# snapshot workflow points --config at it. To tune mappings without a rebuild,
-# mount your own tables.yml over that path (see README).
+# tables.yml ships in the package at /opt/stockwatch-src/config/tables.yml;
+# the snapshot command points --config there. Mount your own copy over it to
+# tune mappings without a rebuild (see README).
 
-USER node
+# Idle so the container stays up for `docker exec`. Snapshots run on demand,
+# driven by your n8n (or a host cron). See README for the self-scheduling variant.
+CMD ["sleep", "infinity"]

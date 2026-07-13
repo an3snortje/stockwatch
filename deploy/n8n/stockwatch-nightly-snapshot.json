@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "command": "mkdir -p /baselines/_logs && /usr/local/bin/stockwatch snapshot-all --out-dir /baselines --config /opt/stockwatch-src/config/tables.yml >> \"/baselines/_logs/snapshot-$(date +%Y%m%d).log\" 2>&1"
+        "command": "docker exec stockwatch sh -c 'mkdir -p /baselines/_logs && stockwatch snapshot-all --out-dir /baselines --config /opt/stockwatch-src/config/tables.yml >> \"/baselines/_logs/snapshot-$(date +%Y%m%d).log\" 2>&1'"
       },
       "id": "b1a1c0de-0002-4a00-8000-000000000002",
       "name": "stockwatch snapshot-all",

@@ -56,6 +56,7 @@ datasets:
       # hence the 0.01 factor. NOTE: "quantity" for WIP is therefore a
       # monetary value (Rand), not units.
       quantity: {product: [Value, Ratio, 0.01]}
+      value: WIPValue                  # native Rand column (~= quantity above)
 
   fg_balance:
     kind: balance
@@ -66,6 +67,7 @@ datasets:
       warehouse: Warehouse
       balance_date: null               # current-state view
       quantity: Units
+      value: {product: [Units, Stock Cost]}   # Rand value of stock on hand
       category: Product
 
   rm_balance:
@@ -77,6 +79,7 @@ datasets:
       warehouse: Location              # matches rm_movements
       balance_date: null               # current-state view
       quantity: SOH Units
+      value: {product: [SOH Units, Stock Cost]}   # Rand value of stock on hand
       category: Cost Type
 
 # How movement_type values classify into directions. Anything not listed

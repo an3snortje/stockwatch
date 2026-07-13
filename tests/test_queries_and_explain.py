@@ -255,6 +255,7 @@ def test_snapshot_all_writes_one_csv_per_store(tmp_path, monkeypatch):
                 "item_description": ["a", "b"],
                 "balance_date": pd.to_datetime(["2026-07-13", "2026-07-13"]),
                 "quantity": [10.0, 5.0],
+                "value": [1000.0, 250.0],
             }
         )
 
@@ -266,5 +267,6 @@ def test_snapshot_all_writes_one_csv_per_store(tmp_path, monkeypatch):
         path = tmp_path / f"{ds}_{stamp}.csv"
         assert path.is_file(), f"missing {path}"
         df = pd.read_csv(path)
-        assert set(["item_code", "warehouse", "quantity"]).issubset(df.columns)
+        assert set(["item_code", "warehouse", "quantity", "value"]).issubset(df.columns)
         assert df["quantity"].sum() == 15.0
+        assert df["value"].sum() == 1250.0    # Rand value carried through

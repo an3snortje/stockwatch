@@ -63,6 +63,8 @@ def _snapshot_at(balances: pd.DataFrame, ts: pd.Timestamp | None = None) -> pd.D
         "balance_date": ("balance_date", "max"),
         "quantity": ("quantity", "sum"),
     }
+    if "value" in df.columns:
+        aggs["value"] = ("value", "sum")
     if "category" in df.columns:
         aggs["category"] = ("category", "first")
     return df.groupby(analysis.KEY, as_index=False).agg(**aggs)
@@ -257,25 +259,35 @@ def report(
         _print(breakdown, f"{title} · {date_from:%Y-%m-%d} → {end:%Y-%m-%d}",
                out_dir / fname if out_dir else None)
 
+    def _col(df: pd.DataFrame, name: str) -> float | None:
+        return df[name].sum() if name in df.columns else None
+
     rows = []
     for ds_name, label, unit in (
         ("rm_balance", "Raw materials", "units"),
         ("fg_balance", "Finished goods", "units"),
         ("wip_balance", "Work in progress", "R"),
     ):
-        closing_total = _snapshot_at(_fetch(cfg, ds_name))["quantity"].sum()
+        closing = _snapshot_at(_fetch(cfg, ds_name))
+        close_qty, close_val = _col(closing, "quantity"), _col(closing, "value")
         baseline = _find_baseline(baseline_dir, ds_name, pd.Timestamp(date_from))
-        opening_total = _load_snapshot_csv(baseline)["quantity"].sum() if baseline else None
+        opening = _load_snapshot_csv(baseline) if baseline else None
+        open_qty = _col(opening, "quantity") if opening is not None else None
+        open_val = _col(opening, "value") if opening is not None else None
         rows.append({
             "stock type": label,
-            "opening": f"{opening_total:,.0f}" if opening_total is not None else "no baseline",
-            "closing (live)": f"{closing_total:,.0f}",
-            "change": f"{closing_total - opening_total:+,.0f}" if opening_total is not None else "-",
+            "opening qty": f"{open_qty:,.0f}" if open_qty is not None else "no baseline",
+            "closing qty": f"{close_qty:,.0f}",
+            "qty change": f"{close_qty - open_qty:+,.0f}" if open_qty is not None else "-",
             "unit": unit,
+            "opening R": f"{open_val:,.0f}" if open_val is not None else "-",
+            "closing R": f"{close_val:,.0f}" if close_val is not None else "-",
+            "R change": f"{close_val - open_val:+,.0f}" if None not in (open_val, close_val) else "-",
             "opening source": baseline.name if baseline else "-",
         })
     balances = pd.DataFrame(rows)
-    _print(balances, f"Stock balances · opening vs live", out_dir / "balances.csv" if out_dir else None)
+    _print(balances, "Stock balances · opening vs live (qty + Rand value)",
+           out_dir / "balances.csv" if out_dir else None)
 
 
 @app.command()
@@ -456,7 +468,10 @@ def snapshot_all(
         result = _snapshot_at(_fetch(cfg, ds_name))
         path = out_dir / f"{ds_name}_{stamp:%Y%m%d}.csv"
         path.write_text(result.to_csv(index=False))
-        written.append(f"{path} ({len(result):,} rows, {result['quantity'].sum():,.1f})")
+        summary = f"{len(result):,} rows, qty {result['quantity'].sum():,.1f}"
+        if "value" in result.columns:
+            summary += f", R{result['value'].sum():,.0f}"
+        written.append(f"{path} ({summary})")
     _print_lines(written)
 
 

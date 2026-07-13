@@ -116,6 +116,54 @@ def reconcile(
     )
 
 
+def classify_chain(period_variances: pd.DataFrame, tolerance: float = 0.5) -> pd.DataFrame:
+    """Classify each item's variance across a chain of consecutive periods.
+
+    Input: long DataFrame with columns [item_code, warehouse, period,
+    variance, item_description]. A `period` is one reconciled interval
+    (e.g. "0630->0707"). Output: one row per item/warehouse with the
+    per-period variances plus:
+      - gross_variance: sum of |variance| across periods (total churn)
+      - net_variance:   signed sum across periods (what survives to the end)
+      - classification:
+          timing     -> churned but nets to ~0 (reverses across boundaries)
+          persistent -> net survives and is most of the churn (real, one-directional)
+          mixed      -> net survives but with reversals too (partly real, partly timing)
+    """
+    df = period_variances.copy()
+    grp = df.groupby(KEY)
+    out = grp.agg(
+        item_description=("item_description", "first"),
+        gross_variance=("variance", lambda s: s.abs().sum()),
+        net_variance=("variance", "sum"),
+        periods_flagged=("variance", lambda s: (s.abs() > tolerance).sum()),
+    ).reset_index()
+
+    def _classify(row: pd.Series) -> str:
+        if row["gross_variance"] <= tolerance:
+            return "clean"
+        if abs(row["net_variance"]) <= tolerance:
+            return "timing"
+        # net survives; if it accounts for most of the churn it's one-directional
+        return "persistent" if abs(row["net_variance"]) >= row["gross_variance"] - tolerance else "mixed"
+
+    out["classification"] = out.apply(_classify, axis=1)
+
+    # widen per-period variances into columns for the report
+    wide = period_variances.pivot_table(
+        index=KEY, columns="period", values="variance", aggfunc="sum", fill_value=0.0
+    )
+    wide.columns = [str(c) for c in wide.columns]
+    wide.columns.name = None
+    out = out.merge(wide.reset_index(), on=KEY, how="left")
+    order = {"persistent": 0, "mixed": 1, "timing": 2, "clean": 3}
+    return out.sort_values(
+        ["classification", "net_variance"],
+        key=lambda s: s.map(order) if s.name == "classification" else s.abs(),
+        ascending=[True, False],
+    ).reset_index(drop=True)
+
+
 def detect_anomalies(
     movements: pd.DataFrame,
     balances: pd.DataFrame | None,

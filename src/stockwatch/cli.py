@@ -210,6 +210,58 @@ def reconcile(
     _print_lines(explain.explain_reconciliation(result))
 
 
+@app.command(name="reconcile-chain")
+def reconcile_chain(
+    scope: str = typer.Argument(..., help="fg | rm"),
+    snapshots: list[Path] = typer.Option(
+        ..., "--snapshot", "-s",
+        help="Baseline CSV, repeated in DATE ORDER (>=2). Consecutive pairs are "
+        "reconciled and each item's variance is classified across periods.",
+    ),
+    csv: Path = CSV_OPT,
+    config: Path = CONFIG_OPT,
+):
+    """Reconcile a chain of snapshots and separate timing noise from real variance.
+
+    Variances that reverse across period boundaries (net ~0) are flagged 'timing';
+    variances that survive to the last snapshot are 'persistent' — the real ones.
+    """
+    if scope not in ("fg", "rm"):
+        raise typer.BadParameter("choose fg or rm")
+    if len(snapshots) < 2:
+        raise typer.BadParameter("need at least two --snapshot CSVs")
+    cfg = load_config(config)
+
+    snaps = []
+    for path in snapshots:
+        snap = _load_snapshot_csv(path)
+        if snap["balance_date"].isna().all():
+            raise typer.BadParameter(f"{path} has no balance_date — regenerate with import-baseline")
+        snaps.append((snap["balance_date"].max(), _snapshot_at(snap), path))
+    snaps.sort(key=lambda t: t[0])
+
+    period_rows = []
+    for (t0, open_snap, p0), (t1, close_snap, p1) in zip(snaps, snaps[1:]):
+        mov = _movements(cfg, scope, t0.to_pydatetime(), t1.to_pydatetime(), None, None)
+        mov, _ = analysis.apply_exclusions(mov, cfg.reconcile_exclusions)
+        rec = analysis.reconcile(open_snap, mov, close_snap, cfg)
+        rec["period"] = f"{t0:%m%d}->{t1:%m%d}"
+        period_rows.append(rec[["item_code", "warehouse", "period", "variance", "item_description"]])
+        console.print(f"[dim]{t0:%Y-%m-%d %H:%M} → {t1:%Y-%m-%d %H:%M}: "
+                      f"{(rec['variance'].abs() > cfg.variance_tolerance).sum()} variance rows[/dim]")
+
+    result = analysis.classify_chain(pd.concat(period_rows, ignore_index=True), cfg.variance_tolerance)
+    counts = result["classification"].value_counts().to_dict()
+    _print(result[result["classification"] != "clean"],
+           f"Chain reconciliation {scope.upper()} ({len(snaps)} snapshots)", csv)
+    console.print(
+        f"• [bold]{counts.get('persistent', 0)} persistent[/bold] + {counts.get('mixed', 0)} mixed "
+        f"= real variances to investigate; {counts.get('timing', 0)} timing (reverse across "
+        f"periods — noise). Persistent net: "
+        f"{result.loc[result['classification']=='persistent', 'net_variance'].sum():+,.0f} units."
+    )
+
+
 @app.command()
 def anomalies(
     scope: str = typer.Argument("all", help="fg | rm | all"),

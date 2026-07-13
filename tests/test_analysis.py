@@ -121,3 +121,46 @@ def test_apply_exclusions_no_rules_is_passthrough():
     mov = _mov([("A", "W", "2026-07-01", "RECEIVED", 5, "X")])
     kept, excluded = apply_exclusions(mov, [])
     assert len(kept) == 1 and len(excluded) == 0
+
+
+def test_classify_chain_separates_timing_from_persistent():
+    from stockwatch.analysis import classify_chain
+
+    rows = pd.DataFrame(
+        [
+            # timing: +340 then -320 -> nets ~+20 but we treat >tol net as not-pure-timing;
+            # use an exact reversal for the timing case
+            ("ESCT434A|38", "FG", "0630->0707", 320.0, "trouser"),
+            ("ESCT434A|38", "FG", "0707->0714", -320.0, "trouser"),
+            # persistent: short both periods, accumulating
+            ("LOST|1", "FG", "0630->0707", -50.0, "lost item"),
+            ("LOST|1", "FG", "0707->0714", -30.0, "lost item"),
+            # clean
+            ("OK|1", "FG", "0630->0707", 0.0, "fine"),
+            ("OK|1", "FG", "0707->0714", 0.0, "fine"),
+        ],
+        columns=["item_code", "warehouse", "period", "variance", "item_description"],
+    )
+    out = classify_chain(rows, tolerance=0.5).set_index("item_code")
+    assert out.loc["ESCT434A|38", "classification"] == "timing"
+    assert out.loc["ESCT434A|38", "net_variance"] == 0.0
+    assert out.loc["ESCT434A|38", "gross_variance"] == 640.0
+    assert out.loc["LOST|1", "classification"] == "persistent"
+    assert out.loc["LOST|1", "net_variance"] == -80.0
+    assert out.loc["OK|1", "classification"] == "clean"
+    # per-period columns present
+    assert "0630->0707" in out.columns
+
+
+def test_classify_chain_mixed():
+    from stockwatch.analysis import classify_chain
+
+    rows = pd.DataFrame(
+        [
+            ("M|1", "FG", "p1", 100.0, "x"),
+            ("M|1", "FG", "p2", -30.0, "x"),  # net +70, gross 130 -> mixed
+        ],
+        columns=["item_code", "warehouse", "period", "variance", "item_description"],
+    )
+    out = classify_chain(rows).set_index("item_code")
+    assert out.loc["M|1", "classification"] == "mixed"

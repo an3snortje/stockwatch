@@ -141,12 +141,20 @@ def reconcile(
         "`stockwatch import-baseline`) to use as the opening balance. Required when "
         "the balance view is current-state only.",
     ),
+    closing_csv: Path = typer.Option(
+        None,
+        "--closing-csv",
+        help="Second baseline CSV to use as the closing balance instead of live stock. "
+        "Reconciles two saved snapshots — a fully reproducible, point-to-point check.",
+    ),
     csv: Path = CSV_OPT,
     config: Path = CONFIG_OPT,
 ):
     """Check that opening balance + movements explains the closing balance."""
     if scope not in ("fg", "rm"):
         raise typer.BadParameter("reconcile works per store: choose fg or rm")
+    if closing_csv is not None and opening_csv is None:
+        raise typer.BadParameter("--closing-csv requires --opening-csv")
     cfg = load_config(config)
     movement_ds = MOVEMENT_SETS[scope][0]
     balance_ds = cfg.datasets[BALANCE_FOR[movement_ds]]
@@ -158,13 +166,24 @@ def reconcile(
             mov_start = opening["balance_date"].max()
         else:
             raise typer.BadParameter(f"{opening_csv} has no balance_date column — pass --from")
-        mov_end = pd.Timestamp(date_to) if date_to is not None else pd.Timestamp.now()
-        closing = _snapshot_at(
-            _fetch(cfg, balance_ds.name, item_code=item, warehouse=warehouse)
-        )
+
+        if closing_csv is not None:
+            closing_raw = _load_snapshot_csv(closing_csv)
+            closing = _snapshot_at(closing_raw)
+            if date_to is not None:
+                mov_end = pd.Timestamp(date_to)
+            elif closing_raw["balance_date"].notna().any():
+                mov_end = closing_raw["balance_date"].max()
+            else:
+                raise typer.BadParameter(f"{closing_csv} has no balance_date column — pass --to")
+            src = f"{closing_csv} @ {mov_end:%Y-%m-%d %H:%M}"
+        else:
+            mov_end = pd.Timestamp(date_to) if date_to is not None else pd.Timestamp.now()
+            closing = _snapshot_at(_fetch(cfg, balance_ds.name, item_code=item, warehouse=warehouse))
+            src = f"live balance now (movements end {mov_end:%Y-%m-%d %H:%M})"
         console.print(
-            f"[dim]Opening = {opening_csv} @ {mov_start:%Y-%m-%d %H:%M}; closing = live "
-            f"balance now; movements {mov_start:%Y-%m-%d %H:%M} → {mov_end:%Y-%m-%d %H:%M}.[/dim]"
+            f"[dim]Opening = {opening_csv} @ {mov_start:%Y-%m-%d %H:%M}; closing = {src}; "
+            f"movements {mov_start:%Y-%m-%d %H:%M} → {mov_end:%Y-%m-%d %H:%M}.[/dim]"
         )
     elif balance_ds.has_date:
         if date_from is None or date_to is None:

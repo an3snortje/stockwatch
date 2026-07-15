@@ -31,7 +31,11 @@ $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`" -OutDir `"{1}`"" -f $script, $OutDir)
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
 # Catch up if the PC was off at the scheduled time; give each run up to an hour.
+# -AllowStartIfOnBatteries / -DontStopIfGoingOnBatteries: the defaults REFUSE to
+# start on battery and kill a running task when unplugged, so a laptop misses
+# every 02:00 run. Override both so the snapshot fires regardless of power state.
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
 if ($RunWhenLoggedOff) {

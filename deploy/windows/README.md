@@ -54,6 +54,30 @@ Start-ScheduledTask -TaskName 'StockWatch Nightly Snapshot'   # run it now to te
 - Baselines → `.\baselines\` (or your `-OutDir`).
 - Logs → `<OutDir>\_logs\snapshot-YYYYMMDD.log`.
 
+## Troubleshooting — "it never fired"
+
+Run this to see the task's state, last result, and latest log in one shot:
+
+```powershell
+$t = 'StockWatch Nightly Snapshot'
+Get-ScheduledTaskInfo -TaskName $t |
+    Select-Object LastRunTime, LastTaskResult, NextRunTime, NumberOfMissedRuns
+Get-ChildItem .\baselines\_logs\snapshot-*.log |
+    Sort-Object LastWriteTime | Select-Object -Last 1 |
+    ForEach-Object { Get-Content $_.FullName -Tail 30 }
+```
+
+| What you see | Meaning / fix |
+|---|---|
+| `Get-ScheduledTask` errors / nothing | Task not registered — run `register-task.ps1`. |
+| `LastTaskResult` = `267011` (`0x41303`) | Task has never run yet — normal until the first 02:00, or it only runs while logged on. Re-register with `-RunWhenLoggedOff` to run signed out. |
+| `NumberOfMissedRuns` > 0 on a **laptop** | Was on battery. Re-register — the script now sets `-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries`. |
+| `LastTaskResult` = `0` but no CSVs | It ran fine but wrote elsewhere — check `-OutDir`. |
+| `LastTaskResult` ≠ `0` with a log | It ran and the tool failed — the log names the cause (DB creds, venv path, or share unreachable). |
+
+After changing power/logon options, **re-run `register-task.ps1`** (it replaces the
+task with `-Force`) so the new settings take effect.
+
 ## Using the baselines
 
 Once a few nights have accumulated, the reconciliation commands find them

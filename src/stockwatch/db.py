@@ -3,15 +3,37 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from urllib.parse import quote_plus
 
 import pandas as pd
 import sqlalchemy as sa
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
+
+
+def _find_env(start: Path | None = None) -> str | None:
+    """Locate `.env` independent of the current working directory.
+
+    A scheduled task runs with CWD = C:\\Windows\\System32, where the default
+    upward-from-CWD search finds nothing. Fall back to walking up from the
+    installed module (editable installs keep the source in the checkout, so the
+    project root — and its `.env` — is above this file).
+    """
+    cwd_hit = find_dotenv(usecwd=True)
+    if cwd_hit:
+        return cwd_hit
+    base = start or Path(__file__).resolve()
+    for parent in [base, *base.parents]:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 def get_engine() -> sa.Engine:
-    load_dotenv()
+    env = _find_env()
+    if env:
+        load_dotenv(env)
     server = os.environ["MSSQL_SERVER"]
     port = os.environ.get("MSSQL_PORT", "1433")
     database = os.environ["MSSQL_DATABASE"]

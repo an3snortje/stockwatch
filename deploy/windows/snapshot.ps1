@@ -26,6 +26,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path $ProjectRoot).Path
+# Task Scheduler starts in C:\Windows\System32; run from the project root so a
+# scheduled run behaves exactly like running the script by hand (e.g. .env lookup).
+Set-Location $ProjectRoot
 
 # Locate the stockwatch executable: venv first, then PATH.
 if (-not $StockwatchExe) {

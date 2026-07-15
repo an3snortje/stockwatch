@@ -1,6 +1,9 @@
+from datetime import datetime
+from pathlib import Path
+
 import pandas as pd
 
-from stockwatch.config import Config, DatasetConfig
+from stockwatch.config import Config, DatasetConfig, load_config
 from stockwatch.dashboard import build_dashboard, render_html
 
 
@@ -71,3 +74,55 @@ def test_render_html_is_self_contained():
     assert "cdn" not in html.lower()
     assert "<script src" not in html and 'link rel="stylesheet"' not in html
     assert "https://" not in html and "//unpkg" not in html and "//cdnjs" not in html
+
+
+def _fake_fetch_factory():
+    def fake_fetch(cfg, dataset, **filters):
+        if dataset.endswith("_movements"):
+            cat = "Fabric" if dataset.startswith("rm") else "Overall"
+            return pd.DataFrame({
+                "item_code": ["X|1", "X|1"],
+                "warehouse": ["W", "W"],
+                "item_description": ["d", "d"],
+                "movement_date": pd.to_datetime(["2026-07-01", "2026-07-02"]),
+                "movement_type": ["RECEIPT" if dataset.startswith("rm") else "RECEIVED",
+                                  "DESPATCH" if dataset.startswith("rm") else "INVOICED"],
+                "quantity": [100.0, -30.0],
+                "value": [5000.0, -1500.0],
+                "category": [cat, cat],
+            })
+        # balance dataset
+        return pd.DataFrame({
+            "item_code": ["X|1", "Y|2"],
+            "warehouse": ["W", "W"],
+            "item_description": ["d", "e"],
+            "balance_date": pd.to_datetime(["2026-07-10", "2026-07-10"]),
+            "quantity": [70.0, 20.0],
+            "value": [3500.0, 900.0],
+        })
+    return fake_fetch
+
+
+def test_cli_report_and_dashboard_run(tmp_path, monkeypatch):
+    """report and dashboard execute end-to-end (no DB) and produce output —
+    guards against a command body referencing an undefined name."""
+    from stockwatch import cli
+
+    monkeypatch.setattr(cli, "_fetch", _fake_fetch_factory())
+    bdir = tmp_path / "baselines"
+    bdir.mkdir()
+    for ds in ("rm_balance", "fg_balance", "wip_balance"):
+        (bdir / f"{ds}_20260701.csv").write_text(
+            "item_code,warehouse,quantity,value\nX|1,W,60,3000\n", encoding="utf-8")
+
+    out_dir = tmp_path / "out"
+    cli.report(date_from=datetime(2026, 7, 1), date_to=datetime(2026, 7, 5),
+               baseline_dir=bdir, out_dir=out_dir, config=Path("config/tables.yml"))
+    assert (out_dir / "balances.csv").is_file()
+    assert (out_dir / "rm_by_cost_type.csv").is_file()
+
+    html_out = tmp_path / "dash.html"
+    cli.dashboard(date_from=datetime(2026, 7, 1), date_to=datetime(2026, 7, 5),
+                  baseline_dir=bdir, out=html_out, config=Path("config/tables.yml"))
+    assert html_out.is_file()
+    assert html_out.read_text(encoding="utf-8").startswith("<!doctype html>")

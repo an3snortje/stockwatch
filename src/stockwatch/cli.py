@@ -70,11 +70,22 @@ def _snapshot_at(balances: pd.DataFrame, ts: pd.Timestamp | None = None) -> pd.D
     return df.groupby(analysis.KEY, as_index=False).agg(**aggs)
 
 
+def _read_csv_any(path: Path) -> pd.DataFrame:
+    """Read a CSV tolerant of encoding: UTF-8 (with/without BOM) or the cp1252
+    that Excel/older Windows writes (en-dash 0x96 etc.). latin-1 never fails."""
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    return pd.read_csv(path, encoding="latin-1")
+
+
 def _load_snapshot_csv(path: Path) -> pd.DataFrame:
     """Read a baseline saved earlier by `stockwatch snapshot --csv`."""
     if not path.is_file():
         raise typer.BadParameter(f"snapshot file not found: {path}")
-    df = pd.read_csv(path)
+    df = _read_csv_any(path)
     missing = {"item_code", "warehouse", "quantity"} - set(df.columns)
     if missing:
         raise typer.BadParameter(f"{path} is missing columns {sorted(missing)}")
@@ -527,7 +538,7 @@ def snapshot_all(
             raise typer.BadParameter(f"{ds_name} is not a balance dataset")
         result = _snapshot_at(_fetch(cfg, ds_name))
         path = out_dir / f"{ds_name}_{stamp:%Y%m%d}.csv"
-        path.write_text(result.to_csv(index=False))
+        path.write_text(result.to_csv(index=False), encoding="utf-8")
         summary = f"{len(result):,} rows, qty {result['quantity'].sum():,.1f}"
         if "value" in result.columns:
             summary += f", R{result['value'].sum():,.0f}"

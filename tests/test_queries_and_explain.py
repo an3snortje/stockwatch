@@ -285,6 +285,23 @@ def test_find_baseline_picks_newest_on_or_before(tmp_path):
     assert _find_baseline(tmp_path, "wip_balance", pd.Timestamp("2026-07-13")) is None
 
 
+def test_load_snapshot_csv_reads_cp1252(tmp_path):
+    """Baselines written as Windows-1252 (en-dash 0x96 in a description) still load."""
+    import pandas as pd
+    from pathlib import Path
+    from stockwatch.cli import _load_snapshot_csv
+
+    path = tmp_path / "rm_balance_20260707.csv"
+    path.write_text(
+        "item_code,warehouse,item_description,quantity\n"
+        "AC-1,W1,Navy – trouser,10\n",   # en-dash, not ASCII
+        encoding="cp1252",
+    )
+    df = _load_snapshot_csv(Path(path))
+    assert df["quantity"].sum() == 10
+    assert "–" in df["item_description"].iloc[0]
+
+
 def test_snapshot_all_writes_one_csv_per_store(tmp_path, monkeypatch):
     """snapshot-all writes baselines/<dataset>_YYYYMMDD.csv for all three stores,
     with the naming convention report/reconcile-chain auto-discover."""

@@ -52,6 +52,17 @@ def test_build_dashboard_aggregates_by_day_category():
     assert data["baselines"]["wip"][0]["q"] == 12345.0
 
 
+def test_build_dashboard_carries_coverage():
+    cfg = _cfg()
+    cov = {"from": "2026-07-15", "to": "2026-07-16"}
+    data = build_dashboard(pd.DataFrame(), pd.DataFrame(), cfg,
+                           {"rm": [], "fg": [], "wip": []}, coverage=cov)
+    assert data["coverage"] == cov
+    # the reconcile guard must be wired into the page
+    html = render_html(data, "T", "S")
+    assert "inCoverage" in html and "exclUpper" in html
+
+
 def test_build_dashboard_folds_beyond_top_n():
     cfg = _cfg()
     rows = [

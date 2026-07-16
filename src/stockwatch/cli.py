@@ -351,7 +351,8 @@ def dashboard(
                     "v": float(live["value"].sum()) if "value" in live.columns else None})
         baselines[tag] = pts
 
-    data = build_dashboard(rm, fg, cfg, baselines)
+    coverage = {"from": date_from.strftime("%Y-%m-%d"), "to": end.strftime("%Y-%m-%d")}
+    data = build_dashboard(rm, fg, cfg, baselines, coverage=coverage)
     html = render_html(
         data, "StockWatch dashboard",
         f"Movements {date_from:%Y-%m-%d} → {end:%Y-%m-%d} · balances from {baseline_dir}/ + live",

@@ -78,14 +78,22 @@ def build_dashboard(
     fg_mov: pd.DataFrame,
     cfg: Config,
     baselines: dict[str, list[dict]],
+    coverage: dict | None = None,
 ) -> dict:
-    """Assemble the embed payload for the dashboard."""
+    """Assemble the embed payload for the dashboard.
+
+    `coverage` is the movement fetch window {"from","to"} (YYYY-MM-DD). The
+    reconciliation is only valid inside it — an opening/closing baseline outside
+    the window has no movement data to bridge it, so the page must not pretend
+    to reconcile there.
+    """
     rm_rows, rm_cats = _movement_rows(rm_mov, cfg)
     fg_rows, fg_cats = _movement_rows(fg_mov, cfg)
     return {
         "movements": {"rm": rm_rows, "fg": fg_rows},
         "categories": {"rm": rm_cats, "fg": fg_cats},
         "baselines": baselines,  # {rm|fg|wip: [{d, q, v}]}
+        "coverage": coverage,    # {from, to} — window movements actually cover
         "tolerance_pct": 0.5,    # reconcile pass if |variance| <= this % of closing
     }
 
@@ -201,7 +209,12 @@ const fmt = (v, m) => (m === "value")
   : nf.format(v) + " u";
 const fmtSigned = (v, m) => (v >= 0 ? "+" : "") + fmt(v, m);
 
-// ---- date range: constrain pickers to the embedded data span --------------
+// ---- date range: constrain pickers to the MOVEMENT coverage window ---------
+// Reconcile and charts are both movement-based, so the window must stay inside
+// the span movements were fetched for. Old baselines sitting outside that span
+// (e.g. a stray earlier snapshot) must not become a selectable opening — that
+// pairs a far-back opening with movements that don't reach it, which is exactly
+// the bogus "off by <huge>" variance we're avoiding.
 function dataSpan() {
   const days = [];
   for (const t of ["rm","fg"]) DATA.movements[t].forEach(r => days.push(r.d));
@@ -209,17 +222,23 @@ function dataSpan() {
   days.sort();
   return [days[0], days[days.length-1]];
 }
-const [minD, maxD] = dataSpan();
+const span = dataSpan();
+const cov = DATA.coverage;
+const minD = (cov && cov.from) || span[0];
+const maxD = (cov && cov.to) || span[1];
 const fromEl = document.getElementById("from"), toEl = document.getElementById("to");
 [fromEl, toEl].forEach(el => { el.min = minD; el.max = maxD; });
 fromEl.value = minD; toEl.value = maxD;
 
 // ---- movement aggregation over the selected window -------------------------
-function aggregate(tag, from, to) {
+// exclUpper: exclude the `to` day. Used for reconciliation: movements between a
+// start-of-day baseline D and the next baseline E are the ones dated [D, E) —
+// including day E would double-add movements that happen after the E snapshot.
+function aggregate(tag, from, to, exclUpper) {
   const byCat = new Map();
   let net = 0;                       // net units over the window (for reconcile)
   for (const r of DATA.movements[tag]) {
-    if (r.d < from || r.d > to) continue;
+    if (r.d < from || (exclUpper ? r.d >= to : r.d > to)) continue;
     const u = r.ru + r.iu + r.au + r.ou;
     net += u;
     const c = byCat.get(r.c) || {cat:r.c, ru:0,iu:0,au:0,ou:0, rv:0,iv:0,av:0,ov:0};
@@ -244,6 +263,10 @@ const STORES = [
   {tag:null, bal:"wip", label:"Work in progress", unit:"R"},
 ];
 
+// A baseline can anchor a reconcile only if it falls inside the movement
+// coverage window — otherwise there is no ledger to bridge it to the other end.
+function inCoverage(d) { return !cov || (d >= cov.from && d <= cov.to); }
+
 function renderCards(from, to) {
   const host = document.getElementById("cards"); host.innerHTML = "";
   const notes = [];
@@ -251,7 +274,6 @@ function renderCards(from, to) {
     const open = baselineAt(s.bal, from), close = baselineAt(s.bal, to);
     const div = document.createElement("div"); div.className = "card";
     const rows = [];
-    const q = b => b == null ? null : b.q;
 
     if (open && open.d !== from) notes.push(`${s.label} opening uses baseline ${open.d}`);
     if (close && close.d !== to) notes.push(`${s.label} closing uses baseline ${close.d}`);
@@ -263,29 +285,39 @@ function renderCards(from, to) {
       rows.push(cardRow("Closing", close ? fmt(close.q,"value") : "—"));
       if (open && close) rows.push(cardRow("Change", fmtSigned(close.q-open.q,"value"), "total"));
       badge = `<span class="badge na">no ledger</span>`;
-    } else if (open && close) {
-      const {net} = aggregate(s.tag, open.d, close.d);   // window between the two baselines
+    } else if (open && close && inCoverage(open.d) && inCoverage(close.d) && open.d < close.d) {
+      const {net} = aggregate(s.tag, open.d, close.d, true);  // [open.d, close.d): exclude closing day
       const expected = open.q + net;
       const variance = close.q - expected;
       const tol = Math.max(1, Math.abs(close.q) * DATA.tolerance_pct/100);
       const ok = Math.abs(variance) <= tol;
       badge = ok ? `<span class="badge ok">reconciles</span>`
                  : `<span class="badge off">off by ${fmt(Math.abs(variance),"units")}</span>`;
-      rows.push(cardRow("Opening", fmt(open.q,"units")));
+      rows.push(cardRow("Opening", fmt(open.q,"units") + ` <span class="muted">(${open.d})</span>`));
       rows.push(cardRow("+ net movement", fmtSigned(net,"units")));
       rows.push(cardRow("= expected closing", fmt(expected,"units"), "total"));
-      rows.push(cardRow("Actual closing", fmt(close.q,"units")));
+      rows.push(cardRow("Actual closing", fmt(close.q,"units") + ` <span class="muted">(${close.d})</span>`));
       rows.push(cardRow("Variance", fmtSigned(variance,"units")));
     } else {
-      rows.push(cardRow("Opening", open ? fmt(open.q,"units") : "—"));
-      rows.push(cardRow("Closing", close ? fmt(close.q,"units") : "—"));
+      // Can't reconcile: a baseline is missing, outside the movement window, or
+      // both dates land on the same baseline. Show balances without a verdict.
+      rows.push(cardRow("Opening", open ? fmt(open.q,"units") + ` <span class="muted">(${open.d})</span>` : "—"));
+      rows.push(cardRow("Closing", close ? fmt(close.q,"units") + ` <span class="muted">(${close.d})</span>` : "—"));
+      badge = `<span class="badge na">can't reconcile</span>`;
+      if (open && close && !(open.d < close.d)) {
+        notes.push(`${s.label}: opening and closing resolve to the same baseline — widen the dates`);
+      } else if (cov) {
+        notes.push(`${s.label}: needs baselines inside the movement window (${cov.from} → ${cov.to})`);
+      }
     }
     div.innerHTML = `<h3>${s.label} ${badge}</h3>` + rows.join("");
     host.appendChild(div);
   }
   const fn = document.getElementById("footnote");
-  fn.textContent = "Reconciliation window runs between the nearest nightly baselines to your dates; "
-    + "movements are netted (issues negative). WIP has no movement ledger, so only its balances are shown. "
+  fn.textContent = "Reconciliation runs between two nightly baselines, counting movements from the "
+    + "opening day up to (not including) the closing day; issues are negative. It is only valid inside "
+    + "the movement window" + (cov ? ` (${cov.from} → ${cov.to})` : "") + ". WIP has no movement ledger, "
+    + "so only its balances are shown. "
     + (notes.length ? "Note: " + [...new Set(notes)].join("; ") + "." : "");
 }
 function cardRow(k, v, cls="") {

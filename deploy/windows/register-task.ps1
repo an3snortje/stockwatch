@@ -17,13 +17,16 @@
 param(
     [string]$TaskName = 'StockWatch Nightly Snapshot',
     [string]$Time = '02:00',
-    [string]$OutDir = (Join-Path $PSScriptRoot '..\..\baselines'),
+    [string]$OutDir,
     # Run even when no one is logged on (prompts for the account password).
     [switch]$RunWhenLoggedOff
 )
 
 $ErrorActionPreference = 'Stop'
-$script = (Resolve-Path (Join-Path $PSScriptRoot 'snapshot.ps1')).Path
+# $PSScriptRoot is unreliable in param() defaults under `-File`; resolve here.
+$here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+$script = (Resolve-Path (Join-Path $here 'snapshot.ps1')).Path
+if (-not $OutDir) { $OutDir = Join-Path $here '..\..\baselines' }
 $OutDir = [System.IO.Path]::GetFullPath(
     [System.IO.Path]::Combine((Get-Location).Path, $OutDir))
 
